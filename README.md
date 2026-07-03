@@ -14,11 +14,17 @@ npm install
 npm run dev        # open the printed http://localhost:5173
 ```
 
-URL options: `?seed=1234` picks a map; `?ai=easy|medium|hard` sets the opponent difficulty (default
-`medium`). e.g. `http://localhost:5173/?seed=7&ai=hard`.
+**Setup panel:** click **⚙ New Match** (top-right) to change every match parameter from the UI —
+seed (with a 🎲 randomize button), map size, AI difficulty, player count (2–3), each slot's civ, and
+which slot you control — then relaunch without editing the URL. Confirmed settings are mirrored back
+into the URL so a match stays shareable. A **GitHub** link next to the button opens the source repo.
 
-You play **Britons** (blue) vs **AI Franks** (red) and **AI Mongols** (green). The game opens in
-**Auto Play** (an AI runs your civ so you can watch); click **Manual** in the top bar to take over.
+URL options (read on load, and what the panel writes): `?seed=1234` picks a map; `?ai=easy|medium|hard`
+sets the opponent difficulty (default `medium`); `?size=96` sets tiles per side; `?players=H:britons,A:franks,A:mongols`
+sets per-slot controller (`H`uman/`A`I) and civ. e.g. `http://localhost:5173/?seed=7&ai=hard&size=128`.
+
+You play **Britons** (blue) vs **AI Franks** (red) and **AI Mongols** (green) by default. The game opens
+in **Auto Play** (an AI runs your civ so you can watch); click **Manual** in the top bar to take over.
 
 Other scripts:
 

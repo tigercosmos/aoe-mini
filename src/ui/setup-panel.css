@@ -1,0 +1,243 @@
+/* src/ui/setup-panel.css
+ * Pre-match setup overlay + the floating "New Match" gear button. Shares the wood/gold
+ * bezel aesthetic of the HUD topbar and minimap frame (see hud.css / index.html). */
+
+.setup-controls {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-gear,
+.setup-ghlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: "Trebuchet MS", ui-serif, Georgia, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5e7c8;
+  text-decoration: none;
+  text-shadow: 0 1px 0 #050403, 0 2px 3px rgba(0, 0, 0, 0.65);
+  cursor: pointer;
+  background:
+    linear-gradient(180deg, rgba(60, 51, 36, 0.44), rgba(9, 8, 6, 0.7) 60%, rgba(46, 39, 27, 0.55)),
+    repeating-linear-gradient(92deg, #4e4434 0 3px, #463c2d 3px 6px);
+  border: 2px solid #100b08;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px #8a7548,
+    0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.setup-gear:hover,
+.setup-ghlink:hover {
+  filter: brightness(1.12);
+}
+.setup-ghlink svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.setup-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow: auto;
+  background: radial-gradient(circle at 50% 30%, rgba(82, 111, 60, 0.22), rgba(4, 5, 4, 0.82) 66%);
+  backdrop-filter: blur(3px);
+  font-family: "Trebuchet MS", ui-serif, Georgia, system-ui, sans-serif;
+  color: #f5e7c8;
+  text-shadow: 0 1px 0 #050403, 0 2px 3px rgba(0, 0, 0, 0.6);
+}
+.setup-overlay[hidden] {
+  display: none;
+}
+
+.setup-panel {
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 20px 22px 22px;
+  background:
+    linear-gradient(180deg, rgba(60, 51, 36, 0.5), rgba(9, 8, 6, 0.78) 60%, rgba(46, 39, 27, 0.6)),
+    repeating-linear-gradient(92deg, #4e4434 0 3px, #463c2d 3px 6px);
+  border: 2px solid #100b08;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 0 1px #8a7548,
+    inset 0 0 0 2px #100b08,
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.setup-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  letter-spacing: 0.5px;
+  color: #ffe9b0;
+}
+.setup-subtitle {
+  margin: 0 0 16px;
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.setup-field {
+  margin-bottom: 16px;
+}
+.setup-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.85;
+}
+.setup-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-input,
+.setup-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  color: #f7ecd2;
+  background: rgba(12, 10, 7, 0.7);
+  border: 1px solid #8a7548;
+  border-radius: 4px;
+}
+.setup-input:focus,
+.setup-select:focus {
+  outline: none;
+  border-color: #ffe9b0;
+  box-shadow: 0 0 0 2px rgba(255, 233, 176, 0.28);
+}
+.setup-select option {
+  color: #f7ecd2;
+  background: #1a150e;
+}
+
+.setup-range {
+  flex: 1 1 auto;
+  accent-color: #c9a24a;
+}
+.setup-value {
+  min-width: 3.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #ffe9b0;
+}
+
+/* segmented button groups (difficulty, player count, controller) */
+.setup-seg {
+  display: inline-flex;
+  border: 1px solid #8a7548;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.setup-seg button {
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 700;
+  color: #e8dcbe;
+  background: rgba(12, 10, 7, 0.55);
+  border: none;
+  border-left: 1px solid #6d614b;
+  cursor: pointer;
+}
+.setup-seg button:first-child {
+  border-left: none;
+}
+.setup-seg button:hover {
+  background: rgba(90, 74, 40, 0.6);
+}
+.setup-seg button[aria-pressed="true"] {
+  color: #1a1206;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f2d488, #c9a24a);
+}
+
+.setup-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(12, 10, 7, 0.45);
+  border: 1px solid #4e4434;
+  border-radius: 4px;
+}
+.setup-player-dot {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #100b08;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.setup-player-name {
+  flex: 0 0 auto;
+  width: 4.5em;
+  font-weight: 700;
+}
+.setup-player .setup-select {
+  flex: 1 1 auto;
+}
+
+.setup-btns {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.setup-btn {
+  flex: 1 1 auto;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #e8dcbe;
+  cursor: pointer;
+  background: rgba(12, 10, 7, 0.6);
+  border: 1px solid #8a7548;
+  border-radius: 5px;
+}
+.setup-btn:hover {
+  filter: brightness(1.12);
+}
+.setup-btn-primary {
+  color: #1a1206;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f2d488, #c9a24a);
+  border-color: #ffe9b0;
+}
+.setup-btn-ghost {
+  flex: 0 0 auto;
+}
