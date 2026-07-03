@@ -4,6 +4,9 @@ A browser real-time-strategy game in the spirit of *Age of Empires II*, built in
 deterministic, render-independent simulation core and a Canvas2D isometric renderer. Three
 civilizations, four ages, economy → military → conquest.
 
+![AoE Mini gameplay - isometric battle and economy](./screenshot/gameplay-1.png)
+![AoE Mini gameplay - town, farms and army](./screenshot/gameplay-2.png)
+
 ## Quick start
 
 ```bash
