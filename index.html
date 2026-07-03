@@ -27,12 +27,10 @@
         height: 100%;
         cursor: crosshair;
       }
-      #minimap {
+      #minimap-wrap {
         position: absolute;
         right: 12px;
         bottom: 8px;
-        width: 200px;
-        height: 200px;
         box-sizing: content-box;
         background: #020202;
         border: 8px solid #4e4434;
@@ -47,20 +45,32 @@
           inset 0 0 0 2px #0d0906;
         z-index: 2;
       }
+      #minimap {
+        display: block;
+        width: 200px;
+        height: 200px;
+      }
+      #minimap-pings {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
       #hud {
         position: absolute;
         inset: 0;
         z-index: 3;
       }
       @media (max-width: 860px) {
+        #minimap-wrap {
+          bottom: calc(42vh + 18px);
+        }
         #minimap {
           width: 154px;
           height: 154px;
-          bottom: calc(42vh + 18px);
         }
       }
       @media (max-width: 560px) {
-        #minimap {
+        #minimap-wrap {
           display: none;
         }
       }
@@ -69,7 +79,10 @@
   <body>
     <div id="app">
       <canvas id="game"></canvas>
-      <canvas id="minimap" width="200" height="200"></canvas>
+      <div id="minimap-wrap">
+        <canvas id="minimap" width="200" height="200"></canvas>
+        <div id="minimap-pings"></div>
+      </div>
       <div id="hud"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

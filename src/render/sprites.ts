@@ -23,6 +23,15 @@ export interface Sprite {
 export const PLAYER_COLORS: readonly string[] = ['#7b7f86', '#2f6fde', '#c93f3a', '#3d9a52'];
 
 // ---------------------------------------------------------------------------
+// FX sprite namespace. The 4-bit sprite-key `kind` field only uses 0..2 for real
+// entities (Unit/Building/Projectile); FX reuse the same memo cache under kind 3.
+// `variant` selects the animation frame (and, for RallyFlag, `owner` tints it).
+// ---------------------------------------------------------------------------
+
+export const SPRITE_KIND_FX = 3;
+export const FxSprite = { DustPuff: 0, HitSpark: 1, SmokePuff: 2, RallyFlag: 3, WaterShimmer: 4 } as const;
+
+// ---------------------------------------------------------------------------
 // Offscreen canvas factory (overridable for headless/jsdom tests).
 // ---------------------------------------------------------------------------
 
@@ -123,7 +132,27 @@ function rasterize(key: number): Sprite {
   const variant = keyVariant(key);
   if (kind === EntityKind.Building) return rasterizeBuilding(subtype, owner, variant);
   if (kind === EntityKind.Projectile) return rasterizeProjectile(subtype);
+  if (kind === SPRITE_KIND_FX) return rasterizeFx(subtype, owner, variant);
+  // Units: variant bit 0 = mirrored (west-facing). variant 0 stays the default
+  // east-facing sprite (portraits rely on this — see spec §3.2).
+  if (variant & 1) return rasterizeMirroredUnit(subtype, owner);
   return rasterizeUnit(subtype, owner);
+}
+
+/** West-facing unit: rasterize the default east sprite, then blit it horizontally flipped. */
+function rasterizeMirroredUnit(subtype: number, owner: number): Sprite {
+  const base = getSprite(spriteKey(EntityKind.Unit, subtype, owner, 0));
+  const bw = base.canvas.width;
+  const bh = base.canvas.height;
+  const canvas = createOffscreenCanvas(bw, bh);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, bw, bh);
+  ctx.save();
+  ctx.translate(bw, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(base.canvas, 0, 0);
+  ctx.restore();
+  return { canvas, anchorX: bw - base.anchorX, anchorY: base.anchorY };
 }
 
 // ---- Units -----------------------------------------------------------------
@@ -147,9 +176,14 @@ function rasterizeUnit(subtype: number, owner: number): Sprite {
   const color = PLAYER_COLORS[owner] ?? PLAYER_COLORS[0];
   ctx.clearRect(0, 0, UNIT_W, UNIT_H);
 
-  // Ground shadow.
+  // Ground shadow — two concentric ellipses for a soft AO skirt.
+  const shR = isCavalry(subtype) ? 19 : 13;
+  const shRy = isCavalry(subtype) ? 6 : 5;
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ellipse(ctx, UNIT_AX, UNIT_AY, shR + 2, shRy + 2);
+  ctx.fill();
   ctx.fillStyle = 'rgba(0,0,0,0.26)';
-  ellipse(ctx, UNIT_AX, UNIT_AY, isCavalry(subtype) ? 19 : 13, isCavalry(subtype) ? 6 : 5);
+  ellipse(ctx, UNIT_AX, UNIT_AY, shR, shRy);
   ctx.fill();
 
   if (subtype === UnitType.Sheep) { drawSheep(ctx); return { canvas, anchorX: UNIT_AX, anchorY: UNIT_AY }; }
@@ -415,8 +449,7 @@ function rasterizeBuilding(subtype: number, owner: number, variant: number): Spr
   const roofColor = PLAYER_COLORS[owner] ?? PLAYER_COLORS[0];
 
   if (subtype === BuildingType.Farm) {
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    diamond(ctx, [gTop[0], gTop[1] + 3], [gRight[0], gRight[1] + 3], [gBot[0], gBot[1] + 3], [gLeft[0], gLeft[1] + 3]); ctx.fill();
+    aoSkirt(ctx, gcx, gcy, Wd, Hd, 3);
     ctx.fillStyle = '#8f6a3a';
     diamond(ctx, gTop, gRight, gBot, gLeft); ctx.fill();
     ctx.strokeStyle = '#6c4e2c'; ctx.lineWidth = 1;
@@ -446,8 +479,7 @@ function rasterizeBuilding(subtype: number, owner: number, variant: number): Spr
   const rBot = [gBot[0], gBot[1] - wallH] as const;
   const rLeft = [gLeft[0], gLeft[1] - wallH] as const;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  diamond(ctx, [gTop[0], gTop[1] + 4], [gRight[0], gRight[1] + 4], [gBot[0], gBot[1] + 4], [gLeft[0], gLeft[1] + 4]); ctx.fill();
+  aoSkirt(ctx, gcx, gcy, Wd, Hd, 4);
 
   // Front-left wall (south-west face): darker.
   ctx.fillStyle = wallDark;
@@ -456,9 +488,13 @@ function rasterizeBuilding(subtype: number, owner: number, variant: number): Spr
   ctx.fillStyle = wallLight;
   quad(ctx, gBot, gRight, rRight, rBot); ctx.fill();
 
+  drawWallTexture(ctx, subtype, wall, gLeft, gBot, gRight, rLeft, rBot, rRight, wallH);
+
   drawPitchedRoof(ctx, roofColor, subtype, rTop, rRight, rBot, rLeft, wallH);
 
   addBuildingDetails(ctx, subtype, roofColor, wall, wallH, gcx, gcy, gTop, gRight, gBot, gLeft, rTop, rRight, rBot, rLeft);
+
+  drawPennant(ctx, subtype, owner, rTop);
 
   // A door hint on the front-right face for larger buildings.
   if (sizeX + sizeY >= 4 && subtype !== BuildingType.Castle) {
@@ -666,6 +702,216 @@ function drawPitchedRoof(
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Baked building embellishments (pennants, wall texture, AO skirt).
+// ---------------------------------------------------------------------------
+
+// Soft ambient-occlusion skirt: three concentric ground diamonds, offset south,
+// growing outward. Replaces the old flat single-alpha shadow.
+function aoSkirt(ctx: CanvasRenderingContext2D, gcx: number, gcy: number, Wd: number, Hd: number, offY: number): void {
+  const alphas = [0.10, 0.10, 0.08];
+  const grow = [6, 3, 0];
+  for (let k = 0; k < 3; k++) {
+    const ex = Wd / 2 + grow[k];
+    const ey = Hd / 2 + grow[k];
+    ctx.fillStyle = `rgba(0,0,0,${alphas[k]})`;
+    diamond(ctx, [gcx, gcy - ey + offY], [gcx + ex, gcy + offY], [gcx, gcy + ey + offY], [gcx - ex, gcy + offY]);
+    ctx.fill();
+  }
+}
+
+// Horizontal course lines on both wall faces (stone) or vertical plank lines (wood).
+function drawWallTexture(
+  ctx: CanvasRenderingContext2D,
+  subtype: number,
+  wall: string,
+  gLeft: readonly number[], gBot: readonly number[], gRight: readonly number[],
+  rLeft: readonly number[], rBot: readonly number[], rRight: readonly number[],
+  wallH: number,
+): void {
+  if (wallH < 8) return;
+  const wooden = subtype === BuildingType.Barracks || subtype === BuildingType.House ||
+    subtype === BuildingType.LumberCamp || subtype === BuildingType.Stable;
+  if (wooden) {
+    // Vertical plank seams every ~5px across each face, faint.
+    ctx.strokeStyle = shade(wall, 0.8);
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.25;
+    for (let t = 0.18; t < 0.95; t += 0.22) {
+      const lx = gLeft[0] + (gBot[0] - gLeft[0]) * t;
+      const ly = gLeft[1] + (gBot[1] - gLeft[1]) * t;
+      line(ctx, lx, ly, lx, ly - wallH);
+      const rx = gBot[0] + (gRight[0] - gBot[0]) * t;
+      const ry = gBot[1] + (gRight[1] - gBot[1]) * t;
+      line(ctx, rx, ry, rx, ry - wallH);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  // Stone: horizontal courses climbing each face.
+  const stone = subtype === BuildingType.Castle || subtype === BuildingType.TownCenter;
+  ctx.strokeStyle = shade(wall, 0.85);
+  ctx.lineWidth = 1;
+  const courses = Math.max(2, Math.min(4, Math.round(wallH / 12)));
+  for (let k = 1; k <= courses; k++) {
+    const h = (wallH * k) / (courses + 1);
+    line(ctx, gLeft[0], gLeft[1] - h, gBot[0], gBot[1] - h);
+    line(ctx, gBot[0], gBot[1] - h, gRight[0], gRight[1] - h);
+  }
+  if (stone) {
+    // Staggered vertical joints for a block look.
+    ctx.strokeStyle = shade(wall, 0.78);
+    for (let k = 1; k <= courses; k++) {
+      const h = (wallH * k) / (courses + 1);
+      const hn = (wallH * (k + 1)) / (courses + 1);
+      const off = (k & 1) ? 0.35 : 0.6;
+      const lx = gLeft[0] + (gBot[0] - gLeft[0]) * off;
+      const ly = gLeft[1] + (gBot[1] - gLeft[1]) * off;
+      line(ctx, lx, ly - h, lx, ly - hn);
+      const rx = gBot[0] + (gRight[0] - gBot[0]) * off;
+      const ry = gBot[1] + (gRight[1] - gBot[1]) * off;
+      line(ctx, rx, ry - h, rx, ry - hn);
+    }
+  }
+}
+
+// A player-coloured triangular pennant on a short pole at the roof apex.
+function drawPennant(ctx: CanvasRenderingContext2D, subtype: number, owner: number, rTop: readonly number[]): void {
+  if (subtype !== BuildingType.TownCenter && subtype !== BuildingType.Castle &&
+      subtype !== BuildingType.Barracks && subtype !== BuildingType.ArcheryRange &&
+      subtype !== BuildingType.Stable) return;
+  const color = PLAYER_COLORS[owner] ?? PLAYER_COLORS[0];
+  const px = rTop[0];
+  const baseY = rTop[1] + (subtype === BuildingType.Castle ? -2 : 2);
+  const poleTop = baseY - 13;
+  ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 1.5;
+  line(ctx, px, baseY, px, poleTop);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(px, poleTop);
+  ctx.lineTo(px + 11, poleTop + 3);
+  ctx.lineTo(px, poleTop + 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = shade(color, 0.7);
+  ctx.beginPath();
+  ctx.moveTo(px, poleTop + 4);
+  ctx.lineTo(px + 7, poleTop + 5.5);
+  ctx.lineTo(px, poleTop + 7);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
+// FX sprites (dust puffs, hit sparks, chimney smoke, rally flag, water shimmer).
+// variant = animation frame; owner tints RallyFlag.
+// ---------------------------------------------------------------------------
+
+function rasterizeFx(subtype: number, owner: number, variant: number): Sprite {
+  switch (subtype) {
+    case FxSprite.DustPuff: return rasterizeDustPuff(variant);
+    case FxSprite.HitSpark: return rasterizeHitSpark(variant);
+    case FxSprite.SmokePuff: return rasterizeSmokePuff(variant);
+    case FxSprite.RallyFlag: return rasterizeRallyFlag(owner);
+    case FxSprite.WaterShimmer: return rasterizeWaterShimmer(variant);
+    default: return rasterizeDustPuff(0);
+  }
+}
+
+// 3 frames: tight puff -> wide wisps -> faint ring.
+function rasterizeDustPuff(frame: number): Sprite {
+  const S = 24;
+  const canvas = createOffscreenCanvas(S, S);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  const spread = 3 + frame * 3;
+  const alpha = frame === 0 ? 0.5 : frame === 1 ? 0.38 : 0.24;
+  ctx.fillStyle = `rgba(196,182,150,${alpha})`;
+  const puffs = [[0, 0, 4], [-spread, 1, 3], [spread, 0, 3], [0, -spread * 0.7, 2.5], [spread * 0.6, spread * 0.5, 2.5]];
+  for (let k = 0; k < puffs.length; k++) {
+    ctx.beginPath();
+    ctx.arc(cx + puffs[k][0], cy + puffs[k][1], puffs[k][2] + frame * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return { canvas, anchorX: cx, anchorY: cy };
+}
+
+// 2 frames: bright 4-point star (fresh) -> smaller redder star (fading).
+function rasterizeHitSpark(frame: number): Sprite {
+  const S = 14;
+  const canvas = createOffscreenCanvas(S, S);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  const r = frame === 0 ? 6 : 4;
+  ctx.strokeStyle = frame === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(255,150,90,0.9)';
+  ctx.lineWidth = 2;
+  line(ctx, cx - r, cy, cx + r, cy);
+  line(ctx, cx, cy - r, cx, cy + r);
+  const d = r * 0.6;
+  ctx.lineWidth = 1;
+  line(ctx, cx - d, cy - d, cx + d, cy + d);
+  line(ctx, cx + d, cy - d, cx - d, cy + d);
+  return { canvas, anchorX: cx, anchorY: cy };
+}
+
+// 3 frames: rising, expanding, thinning grey smoke ball.
+function rasterizeSmokePuff(frame: number): Sprite {
+  const S = 16;
+  const canvas = createOffscreenCanvas(S, S);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  const r = 3 + frame * 1.6;
+  ctx.fillStyle = `rgba(120,120,120,${0.5 - frame * 0.12})`;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(160,160,160,${0.35 - frame * 0.1})`;
+  ctx.beginPath(); ctx.arc(cx - 1, cy - 1, r * 0.6, 0, Math.PI * 2); ctx.fill();
+  return { canvas, anchorX: cx, anchorY: cy };
+}
+
+// A little pole + player-colour pennant, anchored at the flag base.
+function rasterizeRallyFlag(owner: number): Sprite {
+  const W = 12, H = 18;
+  const canvas = createOffscreenCanvas(W, H);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, W, H);
+  const color = PLAYER_COLORS[owner] ?? PLAYER_COLORS[0];
+  ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 1.5;
+  line(ctx, 3, H, 3, 1);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(3, 1); ctx.lineTo(11, 4); ctx.lineTo(3, 7); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = shade(color, 0.7);
+  ctx.beginPath();
+  ctx.moveTo(3, 4); ctx.lineTo(8, 5.5); ctx.lineTo(3, 7); ctx.closePath(); ctx.fill();
+  return { canvas, anchorX: 3, anchorY: H };
+}
+
+// A tile-diamond of thin light crescents; 3 frames at different offsets for shimmer.
+function rasterizeWaterShimmer(frame: number): Sprite {
+  const W = TILE_W, H = TILE_H;
+  const canvas = createOffscreenCanvas(W, H);
+  const ctx = get2d(canvas);
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(190,225,245,0.35)';
+  ctx.lineWidth = 1;
+  const cx = W / 2, cy = H / 2;
+  const cr = [
+    [[-10, -2], [8, 2]],
+    [[-4, 4], [10, -3]],
+    [[2, -4], [-8, 3]],
+  ][frame % 3];
+  for (let k = 0; k < cr.length; k++) {
+    const ox = cr[k][0], oy = cr[k][1];
+    ctx.beginPath();
+    ctx.arc(cx + ox, cy + oy, 4, 0.2, 2.4);
+    ctx.stroke();
+  }
+  return { canvas, anchorX: cx, anchorY: cy };
 }
 
 // ---------------------------------------------------------------------------

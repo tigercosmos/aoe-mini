@@ -462,7 +462,7 @@ describe('military planning', () => {
     expect(world.comp.owner[ti]).toBe(2);
   });
 
-  it('does NOT attack when the army is below attackArmySize', () => {
+  it('does NOT commit an attack when the army is below attackArmySize', () => {
     const world = makeWorld(48, 2);
     world.players[1].populationCap = 20;
     spawnBuilding(world, 2, BuildingType.TownCenter, 30, 30, 4, true);
@@ -471,7 +471,9 @@ describe('military planning', () => {
     }
     world.tick = 11;
     const cmds = createAIPlayer(1, 3).think(world);
-    expect(cmds.some((c) => c.type === 'attackMove')).toBe(false);
+    // Below the wave size the army only STAGES (setRally / attackMove to the mass point); it never
+    // commits a focus-fire `attack` on the enemy TC.
+    expect(cmds.some((c) => c.type === 'attack')).toBe(false);
   });
 
   it('researches FeudalAge at the TC once a Barracks is up and 500 food is banked', () => {
@@ -488,5 +490,86 @@ describe('military planning', () => {
     const feudal = research.find((c) => c.tech === TechId.FeudalAge);
     expect(feudal).toBeDefined();
     expect(feudal!.building).toBe(world.em.handleFor(tc));
+  });
+});
+
+describe('banking / phase machine', () => {
+  it('banks food for the Feudal Age: at 300F with 13 villagers + Barracks, trains nothing', () => {
+    const world = makeWorld(40, 2);
+    const p1 = world.players[1];
+    // 300 food < the 500-food Feudal reserve, so canAffordFree blocks all non-age spending.
+    p1.resources.set([300, 200, 100, 0]);
+    p1.populationCap = 20;
+    spawnBuilding(world, 1, BuildingType.TownCenter, 10, 10, 4, true);
+    spawnBuilding(world, 1, BuildingType.Barracks, 16, 10, 3, true);
+    for (let k = 0; k < 13; k++) spawnUnit(world, 1, UnitType.Villager, 8 + (k % 4), 12 + ((k / 4) | 0));
+    for (let k = 0; k < 4; k++) setNode(world, 8 + k, 16, ResourceNode.Forage, 125);
+    for (let k = 0; k < 4; k++) setNode(world, 16, 8 + k, ResourceNode.Tree, 100);
+    world.tick = 11;
+    const cmds = createAIPlayer(1, 12).think(world);
+    // Villager target (13) reached AND the reserve blocks both villager and militia training.
+    expect(cmds.some((c) => c.type === 'train')).toBe(false);
+  });
+});
+
+describe('counter-aware composition', () => {
+  it('trains Spearman from the Barracks when the enemy army is cavalry-heavy', () => {
+    const world = makeWorld(48, 2);
+    const p1 = world.players[1];
+    p1.resources.set([400, 800, 300, 0]);
+    p1.age = Age.Feudal;
+    p1.populationCap = 40;
+    spawnBuilding(world, 1, BuildingType.TownCenter, 10, 10, 4, true);
+    spawnBuilding(world, 1, BuildingType.Barracks, 16, 10, 3, true);
+    for (let k = 0; k < 5; k++) spawnUnit(world, 1, UnitType.Villager, 8 + k, 12);
+    // Enemy fields 6 Scout Cavalry (cavalry class) -> counter with Spearman.
+    for (let k = 0; k < 6; k++) spawnUnit(world, 2, UnitType.ScoutCavalry, 30 + k * 0.2, 30);
+    world.tick = 11;
+    const cmds = createAIPlayer(1, 44).think(world);
+    const trains = cmds.filter((c): c is Extract<Command, { type: 'train' }> => c.type === 'train');
+    expect(trains.some((c) => c.unit === UnitType.Spearman)).toBe(true);
+  });
+});
+
+describe('defense reaction', () => {
+  it('full-army attacks a raider near the TC and evacuates threatened villagers', () => {
+    const world = makeWorld(48, 2);
+    const p1 = world.players[1];
+    p1.resources.set([100, 100, 50, 0]);
+    p1.populationCap = 20;
+    spawnBuilding(world, 1, BuildingType.TownCenter, 10, 10, 4, true);
+    for (let k = 0; k < 3; k++) spawnUnit(world, 1, UnitType.Militia, 11 + k * 0.2, 11);
+    // Villagers gathering near where the raid lands.
+    const v0 = spawnUnit(world, 1, UnitType.Villager, 14, 14);
+    spawnUnit(world, 1, UnitType.Villager, 15, 14);
+    // Enemy militia ~8 tiles from the TC center (inside THREAT_RADIUS = 14).
+    const raider = spawnUnit(world, 2, UnitType.Militia, 16, 16);
+    world.tick = 11;
+    const cmds = createAIPlayer(1, 7).think(world);
+
+    const attacks = cmds.filter((c): c is Extract<Command, { type: 'attack' }> => c.type === 'attack');
+    expect(attacks.length).toBeGreaterThan(0);
+    const ti = resolveHandle(world.em, attacks[0].target);
+    expect(world.comp.owner[ti]).toBe(2);
+    expect(world.comp.subtype[ti]).toBe(UnitType.Militia);
+    expect(ti).toBe(raider);
+
+    // Threatened villagers get a batched retreat toward the TC.
+    const moves = cmds.filter((c): c is Extract<Command, { type: 'move' }> => c.type === 'move');
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves.some((m) => m.units.includes(world.em.handleFor(v0)))).toBe(true);
+  });
+});
+
+describe('difficulty presets', () => {
+  it('resolves presets and lets explicit config fields override them', () => {
+    const world = freshStartWorld();
+    world.tick = 11;
+    // Medium (default) thinks every 10 ticks -> active at tick 11.
+    expect(createAIPlayer(1, 5).think(world).length).toBeGreaterThan(0);
+    // Easy preset uses thinkInterval 20 -> silent at tick 11 (11 % 20 !== 1).
+    expect(createAIPlayer(1, 5, { difficulty: 'easy' }).think(world)).toEqual([]);
+    // Explicit thinkInterval overrides the easy preset -> active again at tick 11.
+    expect(createAIPlayer(1, 5, { difficulty: 'easy', thinkInterval: 10 }).think(world).length).toBeGreaterThan(0);
   });
 });

@@ -1,0 +1,8 @@
+# Treat source as text so git shows line-by-line diffs (some UTF-8 files with many typographic
+# characters trip git's binary heuristic otherwise).
+*.ts   text diff
+*.tsx  text diff
+*.css  text diff
+*.html text diff
+*.json text diff
+*.md   text diff

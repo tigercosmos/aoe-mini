@@ -5,16 +5,20 @@
 // + stepWorld (T4 step-default) + createAIPlayer (T6). They assert the AI grows an economy and
 // walks the build order to the Feudal Age.
 //
-// NOTE on calibration: the MWV AI is a deliberately simple heuristic planner. Two things about its
-// measured behavior shape the assertions below:
+// NOTE on calibration: the AI is a heuristic planner that now BANKS resources for age-up (see
+// src/ai — a shared budget with a reserve earmarked for the next age tech, so villager/army/upgrade
+// spending can only touch the surplus above the bank). Two things about its measured behavior shape
+// the assertions below:
 //  (1) A healthy RTS opening INVESTS banked resources into villagers, so the raw stockpile dips
 //      during the boom before compounding — the honest "economy grew" signal is net worth
 //      (banked resources + the food invested in the villager workforce), not the raw stockpile.
-//  (2) Reaching Feudal means banking the 500-food age cost from a Dark-Age berry economy and then
-//      researching it (a 2600-tick research), which lands around ~15 min of game time. The default
-//      18-villager "boom" config keeps every spare villager training and stays in the Dark Age, so
-//      the build-order check uses a Feudal-oriented villager cap (the same style of aggressive
-//      config the headless-match merge gate uses).
+//  (2) Reaching Feudal means banking the 500-food age cost from a Dark-Age economy (forage -> sheep
+//      -> anticipatory farms) and researching it. With the DEFAULT preset config this is measured at
+//      ~tick 15,700 on seed 13371337 with ~13 villagers (a healthy, still-growing economy — NOT the
+//      crippled low villager cap the old planner needed). The 22,000-tick bound below is that
+//      measurement + ~40% headroom. Earlier versions of this AI over-invested in villagers and never
+//      banked the 500 food, so the default config stayed stuck in the Dark Age forever; that bug is
+//      what the build-order test now proves fixed.
 
 import { describe, it, expect } from 'vitest';
 import { Age, BuildingType, EntityKind, UnitType, CivId } from '../../src/shared/enums';
@@ -127,10 +131,11 @@ describe('AI economy progression (real stepWorld)', () => {
 
 describe('AI build order (real stepWorld)', () => {
   it(
-    'executes its build order: builds a Barracks and advances to the Feudal Age',
+    'executes its build order: reaches the Feudal Age on the DEFAULT config with a healthy economy',
     () => {
-      // Feudal-oriented economy config (see the calibration note at the top of this file).
-      const { world, ais } = makeAllAIWorld(13371337, { maxVillagers: 12, attackArmySize: 8, thinkInterval: 10 });
+      // DEFAULT preset config (no crippled villager cap). This is the bug-fix proof: the 18-villager
+      // "boom" preset now banks the 500 food and ages up on its own (measured ~tick 15.7k, ~13 vils).
+      const { world, ais } = makeAllAIWorld(13371337);
 
       runMatchUntilAge(world, ais, 1, Age.Feudal, 22000);
 
@@ -138,6 +143,8 @@ describe('AI build order (real stepWorld)', () => {
       expect(countBuildingType(world, 1, BuildingType.Barracks, true)).toBeGreaterThanOrEqual(1);
       // The Feudal Age tech completed -> the player advanced.
       expect(world.players[1].age).toBeGreaterThanOrEqual(Age.Feudal);
+      // ...and it did so on a HEALTHY, still-growing economy, not a deliberately crippled villager cap.
+      expect(countVillagers(world, 1)).toBeGreaterThanOrEqual(12);
     },
     MATCH_TIMEOUT,
   );

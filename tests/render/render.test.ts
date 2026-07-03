@@ -6,13 +6,14 @@
 // reads World.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { EntityKind, UnitType } from '../../src/shared/enums';
-import { MAX_ENTITIES } from '../../src/shared/constants';
+import { EntityKind, UnitType, BuildingType, ResourceNode, FLAG_UNDER_CONSTRUCTION } from '../../src/shared/enums';
+import { MAX_ENTITIES, TREE_WOOD } from '../../src/shared/constants';
 import { worldToScreen, type Vec2 } from '../../src/shared/iso';
 import type { World } from '../../src/shared/world';
 import type { ViewState } from '../../src/shared/interfaces';
 import {
   spriteKey, getSprite, getSpriteCacheSize, clearSpriteCache, setCanvasFactory, PLAYER_COLORS,
+  SPRITE_KIND_FX, FxSprite,
 } from '../../src/render/sprites';
 import { createCanvas2DRenderer } from '../../src/render/canvas2d';
 
@@ -20,7 +21,7 @@ import { createCanvas2DRenderer } from '../../src/render/canvas2d';
 // Fake canvas + recording 2D context.
 // ---------------------------------------------------------------------------
 
-interface DrawImageCall { img: unknown; dx: number; dy: number; dw?: number; dh?: number }
+interface DrawImageCall { img: unknown; dx: number; dy: number; dw?: number; dh?: number; nargs: number }
 interface FillRectCall { x: number; y: number; w: number; h: number; fillStyle: unknown }
 
 class FakeCtx {
@@ -31,6 +32,7 @@ class FakeCtx {
   globalAlpha = 1;
   drawImageCalls: DrawImageCall[] = [];
   fillRectCalls: FillRectCall[] = [];
+  fillCalls = 0;
   constructor(canvas: { width: number; height: number }) { this.canvas = canvas; }
   clearRect(): void {}
   fillRect(x: number, y: number, w: number, h: number): void {
@@ -42,10 +44,25 @@ class FakeCtx {
   closePath(): void {}
   arc(): void {}
   ellipse(): void {}
-  fill(): void {}
+  fill(): void { this.fillCalls++; }
   stroke(): void {}
-  drawImage(img: unknown, dx: number, dy: number, dw?: number, dh?: number): void {
-    this.drawImageCalls.push({ img, dx, dy, dw, dh });
+  // No-op stubs for the calls the upgraded renderer makes (save/restore state, transforms,
+  // dashed lines, vignette gradient).
+  save(): void {}
+  restore(): void {}
+  translate(): void {}
+  rotate(): void {}
+  scale(): void {}
+  setLineDash(): void {}
+  createRadialGradient(): { addColorStop(): void } { return { addColorStop(): void {} }; }
+  // Accepts both the 5-arg (img,dx,dy,dw,dh) and 9-arg (img,sx,sy,sw,sh,dx,dy,dw,dh) forms;
+  // records the DESTINATION coords + the arg count so identity/anchor assertions survive.
+  drawImage(
+    img: unknown, a: number, b: number, c?: number, d?: number,
+    e?: number, f?: number, g?: number, h?: number,
+  ): void {
+    if (h !== undefined) this.drawImageCalls.push({ img, dx: e!, dy: f!, dw: g, dh: h, nargs: 9 });
+    else this.drawImageCalls.push({ img, dx: a, dy: b, dw: c, dh: d, nargs: 5 });
   }
 }
 
@@ -79,6 +96,14 @@ function makeWorld(size: number, capacity = 32): World {
     sizeY: new Uint8Array(capacity),
     hp: new Float32Array(capacity),
     maxHp: new Float32Array(capacity),
+    // Fields the upgraded renderer reads for animation / rally / projectiles.
+    orderType: new Uint8Array(capacity),
+    orderTarget: new Int32Array(capacity).fill(-1),
+    attackRange: new Float32Array(capacity),
+    attackRateTicks: new Float32Array(capacity),
+    attackCooldown: new Float32Array(capacity),
+    rallyX: new Float32Array(capacity).fill(-1),
+    rallyY: new Float32Array(capacity).fill(-1),
   };
   const generation = new Uint16Array(capacity);
   const alive = new Uint8Array(capacity);
@@ -183,8 +208,9 @@ describe('canvas2d renderer', () => {
     expect(call).toBeDefined();
     const out: Vec2 = { x: 0, y: 0 };
     worldToScreen(view, 0.5, 0, out);
+    // dx stays exact (facing east -> unmirrored, no x offset); dy gains a small walk bob.
     expect(call!.dx).toBeCloseTo(out.x - spr.anchorX, 5);
-    expect(call!.dy).toBeCloseTo(out.y - spr.anchorY, 5);
+    expect(Math.abs(call!.dy - (out.y - spr.anchorY))).toBeLessThanOrEqual(2.5);
   });
 
   it('y-sorts so a southern entity draws after a northern one', () => {
@@ -314,5 +340,81 @@ describe('canvas2d renderer', () => {
     const size = getSpriteCacheSize();
     r.render(world, makeView({ viewportW: 300, viewportH: 300 }), 0.5);
     expect(getSpriteCacheSize()).toBe(size);
+  });
+
+  it('caches the mirrored (west-facing) unit sprite under its own key', () => {
+    clearSpriteCache();
+    const east = getSprite(spriteKey(EntityKind.Unit, UnitType.Villager, 1, 0));
+    const afterEast = getSpriteCacheSize();
+    const west = getSprite(spriteKey(EntityKind.Unit, UnitType.Villager, 1, 1));
+    expect(west.canvas).not.toBe(east.canvas);
+    expect(west.anchorX).toBeCloseTo(east.canvas.width - east.anchorX, 5);
+    expect(getSpriteCacheSize()).toBe(afterEast + 1); // only the mirrored key is new
+  });
+
+  it('redraws the terrain chunk when a resource node crosses a depletion stage', () => {
+    const captured: FakeCanvas[] = [];
+    setCanvasFactory((w, h) => { const cv = makeCanvas(w, h); captured.push(cv); return cv as unknown as HTMLCanvasElement; });
+    const world = makeWorld(16);
+    revealAll(world, 1, true);
+    const ti = 2 * 16 + 2;
+    world.map.resourceType[ti] = ResourceNode.Tree;
+    world.map.resourceAmount[ti] = TREE_WOOD; // stage 0 (full)
+    const canvas = makeCanvas(200, 200);
+    const r = createCanvas2DRenderer();
+    r.init(canvas as unknown as HTMLCanvasElement);
+    r.render(world, makeView(), 0);
+    const chunk = captured.find((cv) => cv.width === 1024 && cv.height === 512)!;
+    const before = chunk.getContext('2d').fillCalls;
+    // Deplete across a stage boundary (full -> nearly gone) and advance the sim tick.
+    world.map.resourceAmount[ti] = TREE_WOOD * 0.05; // stage 3
+    world.tick++;
+    r.render(world, makeView(), 0);
+    expect(chunk.getContext('2d').fillCalls).toBeGreaterThan(before);
+  });
+
+  it('emits a dust puff after an entity dies (alive flips 0)', () => {
+    const world = makeWorld(8);
+    revealAll(world, 1, true);
+    addUnit(world, 0, UnitType.Militia, 1, 3, 3);
+    const canvas = makeCanvas(200, 200);
+    const r = createCanvas2DRenderer();
+    r.init(canvas as unknown as HTMLCanvasElement);
+    r.render(world, makeView(), 0); // unit drawn -> tracked as drawn
+    world.em.alive[0] = 0;          // dies
+    world.tick++;
+    r.render(world, makeView(), 0); // death diff -> dust puff
+    const puff = getSprite(spriteKey(SPRITE_KIND_FX, FxSprite.DustPuff, 0, 0));
+    expect(mainCtxOf(canvas).drawImageCalls.some((c) => c.img === puff.canvas)).toBe(true);
+  });
+
+  it('draws the construction slice with a 9-arg drawImage for an under-construction building', () => {
+    const world = makeWorld(8);
+    revealAll(world, 1, true);
+    addBuilding(world, 0, BuildingType.House, 1, 3, 3, 2, 2);
+    world.comp.flags[0] = FLAG_UNDER_CONSTRUCTION;
+    world.comp.hp[0] = 400; world.comp.maxHp[0] = 1000; // 40% built
+    const canvas = makeCanvas(200, 200);
+    const r = createCanvas2DRenderer();
+    r.init(canvas as unknown as HTMLCanvasElement);
+    r.render(world, makeView(), 0);
+    const spr = getSprite(spriteKey(EntityKind.Building, BuildingType.House, 1, (2 << 4) | 2));
+    const call = mainCtxOf(canvas).drawImageCalls.find((c) => c.img === spr.canvas);
+    expect(call).toBeDefined();
+    expect(call!.nargs).toBe(9); // bottom-slice clip form
+  });
+
+  it('draws the building sprite preview for a footprint ghost (sizeX/sizeY/tileValid)', () => {
+    const world = makeWorld(8);
+    revealAll(world, 1, true);
+    const canvas = makeCanvas(200, 200);
+    const r = createCanvas2DRenderer();
+    r.init(canvas as unknown as HTMLCanvasElement);
+    const tileValid = new Uint8Array([1, 1, 0, 1]); // one blocked tile
+    r.render(world, makeView({
+      ghost: { building: BuildingType.House, tileX: 2, tileY: 2, valid: false, sizeX: 2, sizeY: 2, tileValid },
+    }), 0);
+    const spr = getSprite(spriteKey(EntityKind.Building, BuildingType.House, 1, (2 << 4) | 2));
+    expect(mainCtxOf(canvas).drawImageCalls.some((c) => c.img === spr.canvas)).toBe(true);
   });
 });

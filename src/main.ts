@@ -1,6 +1,7 @@
 // src/main.ts
 // Browser entry point. Reads ?seed= from the URL (default 20260702) and starts a 3-player match:
 // human Britons vs AI Franks + AI Mongols on the default map size.
+// Also reads ?ai=easy|medium|hard to pick the AI difficulty preset (default medium).
 
 import './ui/hud.css';
 import { startGame } from './app/game';
@@ -15,6 +16,11 @@ function parseSeed(): number {
   if (raw === null) return DEFAULT_SEED;
   const n = Number(raw);
   return Number.isFinite(n) ? n >>> 0 : DEFAULT_SEED;
+}
+
+function parseDifficulty(): 'easy' | 'medium' | 'hard' | undefined {
+  const raw = new URLSearchParams(window.location.search).get('ai');
+  return raw === 'easy' || raw === 'medium' || raw === 'hard' ? raw : undefined;
 }
 
 function requireElement<T extends HTMLElement>(id: string): T {
@@ -38,7 +44,7 @@ function boot(): void {
     ],
   };
 
-  startGame(canvas, minimap, hudRoot, setup);
+  startGame(canvas, minimap, hudRoot, setup, parseDifficulty());
 }
 
 if (document.readyState === 'loading') {

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createInputController } from '../../src/ui/input';
-import type { InputController } from '../../src/shared/interfaces';
+import { createInputController, findIdleVillagers } from '../../src/ui/input';
+import type { HumanInput } from '../../src/ui/input';
 import type { World } from '../../src/shared/world';
 import { makeHandle } from '../../src/shared/world';
 import { EntityKind, UnitType, GAIA } from '../../src/shared/enums';
@@ -29,6 +29,7 @@ function makeWorld(size: number, cap = 64): Fake {
   const radius = new Float32Array(cap);
   const sizeX = new Uint8Array(cap);
   const sizeY = new Uint8Array(cap);
+  const orderType = new Uint8Array(cap); // OrderType.Idle === 0
 
   const terrain = new Uint8Array(size * size);
   const resourceType = new Uint8Array(size * size);
@@ -94,7 +95,7 @@ function makeWorld(size: number, cap = 64): Fake {
     { id: 2, resources: new Float32Array([1000, 1000, 1000, 1000]) },
   ];
 
-  const comp = { capacity: cap, kind, subtype, owner, flags, posX, posY, radius, sizeX, sizeY } as unknown;
+  const comp = { capacity: cap, kind, subtype, owner, flags, posX, posY, radius, sizeX, sizeY, orderType } as unknown;
   const map = { size, terrain, resourceType, resourceAmount, occupant, visible, explored } as unknown;
   const world = { mapSize: size, em, comp, map, grid, players } as unknown as World;
 
@@ -126,7 +127,7 @@ function mouse(type: string, el: EventTarget, button: number, x: number, y: numb
   el.dispatchEvent(new MouseEvent(type, { button, clientX: x, clientY: y, shiftKey: shift, bubbles: true }));
 }
 
-let controller: InputController;
+let controller: HumanInput;
 let canvas: HTMLCanvasElement;
 let minimap: HTMLCanvasElement;
 
@@ -233,5 +234,81 @@ describe('build ghost placement', () => {
     expect(controller.view.ghost).not.toBeNull();
     expect(controller.view.ghost?.valid).toBe(false);
     expect(controller.drainCommands()).toEqual([]);
+  });
+
+  it('refreshGhost fills per-tile validity: an occupied footprint cell is marked 0', () => {
+    const f = makeWorld(SIZE);
+    const vil = f.spawn(EntityKind.Unit, UnitType.Villager, 1, 5, 5);
+    // House is 2x2 at origin (5,5) -> tiles (5,5),(6,5),(5,6),(6,6). Occupy (6,5) = dx1,dy0 -> index 1.
+    f.occupy(6, 5, 12345);
+    controller.view.selection = [f.handleFor(vil)];
+    controller.view.ghost = {
+      building: 1 /* House */,
+      tileX: 5,
+      tileY: 5,
+      valid: false,
+      sizeX: 2,
+      sizeY: 2,
+      tileValid: new Uint8Array(4),
+    };
+    controller.update(f.world, 16); // update() calls refreshGhost on the live ghost
+
+    const tv = controller.view.ghost?.tileValid;
+    expect(tv).toBeDefined();
+    expect(Array.from(tv!)).toEqual([1, 0, 1, 1]);
+    expect(controller.view.ghost?.valid).toBe(false); // not all placeable
+  });
+});
+
+describe('idle villagers', () => {
+  it('findIdleVillagers returns only own idle villagers, ascending', () => {
+    const f = makeWorld(SIZE);
+    const a = f.spawn(EntityKind.Unit, UnitType.Villager, 1, 10, 10);
+    const b = f.spawn(EntityKind.Unit, UnitType.Villager, 1, 11, 11);
+    const enemy = f.spawn(EntityKind.Unit, UnitType.Villager, 2, 12, 12);
+    const busy = f.spawn(EntityKind.Unit, UnitType.Villager, 1, 13, 13);
+    // Mark one own villager busy (OrderType.GatherTile === 4) and the enemy is player 2.
+    (f.world.comp as unknown as { orderType: Uint8Array }).orderType[busy] = 4;
+    void enemy;
+
+    const idle = findIdleVillagers(f.world, 1);
+    expect(idle).toEqual([f.handleFor(a), f.handleFor(b)]);
+  });
+
+  it('"." cycles to an idle villager and centers the camera', () => {
+    const f = makeWorld(SIZE);
+    const a = f.spawn(EntityKind.Unit, UnitType.Villager, 1, 20, 24);
+    f.spawn(EntityKind.Unit, UnitType.Villager, 1, 40, 44);
+    controller.update(f.world, 16);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '.', bubbles: true }));
+
+    expect(controller.view.selection).toEqual([f.handleFor(a)]);
+    expect(controller.view.camX).toBe(20);
+    expect(controller.view.camY).toBe(24);
+  });
+});
+
+describe('double-click select same type', () => {
+  it('a quick second click on a villager selects all on-screen villagers', () => {
+    const f = makeWorld(SIZE);
+    const cx = controller.view.camX;
+    const cy = controller.view.camY;
+    const a = f.spawn(EntityKind.Unit, UnitType.Villager, 1, cx, cy); // at screen center
+    const b = f.spawn(EntityKind.Unit, UnitType.Villager, 1, cx + 2, cy + 2); // on screen, off the pick circle
+    f.explore(Math.floor(cx), Math.floor(cy), 1);
+    controller.update(f.world, 16);
+
+    // First click selects only A.
+    mouse('mousedown', canvas, 0, 400, 300);
+    mouse('mouseup', window, 0, 400, 300);
+    expect(controller.view.selection).toEqual([f.handleFor(a)]);
+
+    // Immediate second click on A -> select every on-screen villager.
+    mouse('mousedown', canvas, 0, 400, 300);
+    mouse('mouseup', window, 0, 400, 300);
+    expect(controller.view.selection.sort((x, y) => x - y)).toEqual(
+      [f.handleFor(a), f.handleFor(b)].sort((x, y) => x - y),
+    );
   });
 });

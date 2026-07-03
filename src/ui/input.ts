@@ -11,6 +11,7 @@ import {
   EntityKind,
   UnitType,
   ResourceNode,
+  OrderType,
   BuildingType as BuildingTypeEnum,
   GAIA,
   FLAG_UNDER_CONSTRUCTION,
@@ -30,6 +31,39 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2;
 const ZOOM_STEP = 1.1;
 const CLICK_MARKER_TTL_MS = 620;
+const DOUBLE_CLICK_MS = 350; // second click on the same unit within this window = select-same-type
+
+/**
+ * Exact inverse of render/minimap.ts `project()`: minimap-canvas pixels -> world tile coords.
+ * Forward: denom = size>1 ? 2*(size-1) : 1; mx = W*(wx-wy+(size-1))/denom; my = H*(wx+wy)/denom.
+ * Solving the two linear equations gives (wx,wy) below (clamped to the map). Duplicated here (not
+ * imported from render) to keep input.ts free of any renderer dependency; the round-trip is pinned
+ * by a test against the real project() formula.
+ */
+export function minimapToWorld(mx: number, my: number, w: number, h: number, size: number, out: Vec2): void {
+  const denom = size > 1 ? 2 * (size - 1) : 1;
+  const u = (mx / w) * denom - (size - 1); // = wx - wy
+  const v = (my / h) * denom; // = wx + wy
+  out.x = clamp((u + v) / 2, 0, size - 1);
+  out.y = clamp((v - u) / 2, 0, size - 1);
+}
+
+/** All idle villagers owned by `player`, as entity HANDLES in ascending index order. Pure helper
+ *  shared by the HUD idle button/badge and the input controller's idle-cycle hotkeys. */
+export function findIdleVillagers(world: World, player: PlayerId): number[] {
+  const comp = world.comp;
+  const em = world.em;
+  const out: number[] = [];
+  for (let i = 0; i < comp.capacity; i++) {
+    if (em.alive[i] !== 1) continue;
+    if (comp.owner[i] !== player) continue;
+    if (comp.kind[i] !== EntityKind.Unit) continue;
+    if (comp.subtype[i] !== UnitType.Villager) continue;
+    if (comp.orderType[i] !== OrderType.Idle) continue;
+    out.push(em.handleFor(i));
+  }
+  return out;
+}
 
 interface DragState {
   active: boolean;
@@ -74,6 +108,9 @@ class HumanInputController implements HumanInput {
   private mouseX = 0;
   private mouseY = 0;
   private mouseInside = false;
+  private minimapDrag = false;
+  private idleCycle = -1;
+  private lastClick = { time: -1e9, handle: -1 };
   private readonly tmp: Vec2 = { x: 0, y: 0 };
 
   // Bound handlers (stable identity for add/removeEventListener).
@@ -86,6 +123,7 @@ class HumanInputController implements HumanInput {
   private readonly onKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
   private readonly onKeyUp = (e: KeyboardEvent) => { this.keys.delete(e.key.toLowerCase()); };
   private readonly onMinimapDown = (e: MouseEvent) => this.handleMinimapDown(e);
+  private readonly onWindowMouseMove = (e: MouseEvent) => this.handleWindowMouseMove(e);
 
   constructor(localPlayer: PlayerId) {
     this.view = {
@@ -125,6 +163,7 @@ class HumanInputController implements HumanInput {
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('mousemove', this.onWindowMouseMove);
     minimap.addEventListener('mousedown', this.onMinimapDown);
     minimap.addEventListener('contextmenu', this.onContextMenu);
   }
@@ -146,10 +185,12 @@ class HumanInputController implements HumanInput {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('mousemove', this.onWindowMouseMove);
     this.canvas = null;
     this.minimap = null;
     this.keys.clear();
     this.drag.active = false;
+    this.minimapDrag = false;
   }
 
   update(world: World, dtMs: number): void {
@@ -276,6 +317,7 @@ class HumanInputController implements HumanInput {
 
   private handleMouseUp(e: MouseEvent): void {
     if (e.button !== 0) return;
+    this.minimapDrag = false; // end any minimap drag-pan (left button)
     if (!this.drag.active) return;
     this.drag.active = false;
     this.syncDragFeedback();
@@ -297,14 +339,51 @@ class HumanInputController implements HumanInput {
     } else {
       // Single click select (any owner; enemies are view-only).
       const handle = pickEntity(this.world, this.view, this.drag.startX, this.drag.startY);
+      const comp = this.world.comp;
+      const now = e.timeStamp;
+      const doubled = handle >= 0 && handle === this.lastClick.handle && now - this.lastClick.time < DOUBLE_CLICK_MS;
+      this.lastClick = { time: now, handle };
       if (handle >= 0) {
-        this.setSelection([handle], e.shiftKey);
-        this.pushMarker('select', this.drag.startX, this.drag.startY);
+        const i = resolveHandle(this.world.em, handle);
+        if (
+          doubled &&
+          i >= 0 &&
+          comp.kind[i] === EntityKind.Unit &&
+          comp.owner[i] === this.view.localPlayer
+        ) {
+          // Double-click: select every own unit of this subtype currently on screen.
+          this.selectSameTypeOnScreen(this.world, comp.subtype[i]);
+          this.pushMarker('select', this.drag.startX, this.drag.startY);
+        } else {
+          this.setSelection([handle], e.shiftKey);
+          this.pushMarker('select', this.drag.startX, this.drag.startY);
+        }
       } else if (!e.shiftKey) {
         this.view.selection = [];
       }
     }
     this.refreshPointerFeedback(this.world);
+  }
+
+  /** Select all own units of `subtype` whose interpolated position is within the viewport. */
+  private selectSameTypeOnScreen(world: World, subtype: number): void {
+    const handles = entitiesInScreenRect(
+      world,
+      this.view,
+      0,
+      0,
+      this.view.viewportW,
+      this.view.viewportH,
+      this.view.localPlayer,
+    );
+    const comp = world.comp;
+    const em = world.em;
+    const filtered: number[] = [];
+    for (const h of handles) {
+      const i = resolveHandle(em, h);
+      if (i >= 0 && comp.subtype[i] === subtype) filtered.push(h);
+    }
+    if (filtered.length > 0) this.setSelection(filtered, false);
   }
 
   private handleWheel(e: WheelEvent): void {
@@ -314,6 +393,9 @@ class HumanInputController implements HumanInput {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    // The HUD's keydown listener runs first; when it consumes a grid hotkey it calls
+    // preventDefault(), so we yield here to avoid double-handling (e.g. 'q' training vs WASD pan).
+    if (e.defaultPrevented) return;
     const key = e.key.toLowerCase();
     this.keys.add(key);
 
@@ -326,6 +408,18 @@ class HumanInputController implements HumanInput {
 
     if (key === 'escape') {
       this.view.ghost = null;
+      return;
+    }
+    if (key === '.') {
+      if (this.world) this.cycleIdleVillager(this.world, false);
+      return;
+    }
+    if (key === ',') {
+      if (this.world) this.cycleIdleVillager(this.world, true);
+      return;
+    }
+    if (key === 'm') {
+      if (this.world) this.selectAllMilitary(this.world, e.shiftKey);
       return;
     }
     // Control groups 1-9.
@@ -347,12 +441,87 @@ class HumanInputController implements HumanInput {
     const w = rect.width || this.minimap.width;
     const h = rect.height || this.minimap.height;
     if (w <= 0 || h <= 0) return;
-    const fx = (e.clientX - rect.left) / w;
-    const fy = (e.clientY - rect.top) / h;
-    // Linear map of the minimap square to world tiles (v1 approximation; ignores the 45deg render skew).
-    this.view.camX = clamp(fx * this.world.mapSize, 0, this.world.mapSize);
-    this.view.camY = clamp(fy * this.world.mapSize, 0, this.world.mapSize);
-    this.pushMarker('move', this.view.viewportW - 105, this.view.viewportH - 105);
+    minimapToWorld(e.clientX - rect.left, e.clientY - rect.top, w, h, this.world.mapSize, this.tmp);
+    if (e.button === 0) {
+      // Left: snap camera to the clicked spot and start a drag-pan (works in auto-play too).
+      this.view.camX = this.tmp.x;
+      this.view.camY = this.tmp.y;
+      this.minimapDrag = true;
+    } else if (e.button === 2 && this._manualControl) {
+      // Right: order the current selection at that world point.
+      this.issueMinimapOrder(this.tmp.x, this.tmp.y);
+    }
+  }
+
+  private handleWindowMouseMove(e: MouseEvent): void {
+    if (!this.minimapDrag || !this.minimap || !this.world) return;
+    const rect = this.minimap.getBoundingClientRect();
+    const w = rect.width || this.minimap.width;
+    const h = rect.height || this.minimap.height;
+    if (w <= 0 || h <= 0) return;
+    minimapToWorld(e.clientX - rect.left, e.clientY - rect.top, w, h, this.world.mapSize, this.tmp);
+    this.view.camX = this.tmp.x;
+    this.view.camY = this.tmp.y;
+  }
+
+  /** Right-click on the minimap: move / attack-move ('a' held) selected units, or set the rally
+   *  point of selected buildings, at the given world coords. Manual mode only. */
+  private issueMinimapOrder(wx: number, wy: number): void {
+    if (!this.world) return;
+    const { units, buildings } = this.classifySelection(this.world);
+    const player = this.view.localPlayer;
+    const markerX = this.view.viewportW - 105;
+    const markerY = this.view.viewportH - 105;
+    if (units.length > 0) {
+      const attackMove = this.keys.has('a');
+      this.pushMarker(attackMove ? 'attack' : 'move', markerX, markerY);
+      this.buffer.push({ type: attackMove ? 'attackMove' : 'move', player, units, x: wx, y: wy });
+    } else if (buildings.length > 0) {
+      this.pushMarker('rally', markerX, markerY);
+      for (const b of buildings) this.buffer.push({ type: 'setRally', player, building: b, x: wx, y: wy });
+    }
+  }
+
+  /** '.' cycles to the next idle villager; ',' selects them all. Centers the camera on the target. */
+  private cycleIdleVillager(world: World, selectAll: boolean): void {
+    const idle = findIdleVillagers(world, this.view.localPlayer);
+    if (idle.length === 0) return;
+    if (selectAll) {
+      this.setSelection(idle, false);
+      this.centerOnHandle(world, idle[0]);
+    } else {
+      this.idleCycle = (this.idleCycle + 1) % idle.length;
+      const h = idle[this.idleCycle];
+      this.setSelection([h], false);
+      this.centerOnHandle(world, h);
+    }
+    this.pushMarker('select', this.view.viewportW / 2, this.view.viewportH / 2);
+  }
+
+  /** 'm' selects every own military unit (all units except villagers/sheep) map-wide. */
+  private selectAllMilitary(world: World, additive: boolean): void {
+    const comp = world.comp;
+    const em = world.em;
+    const handles: number[] = [];
+    for (let i = 0; i < comp.capacity; i++) {
+      if (em.alive[i] !== 1) continue;
+      if (comp.owner[i] !== this.view.localPlayer) continue;
+      if (comp.kind[i] !== EntityKind.Unit) continue;
+      const st = comp.subtype[i];
+      if (st === UnitType.Villager || st === UnitType.Sheep) continue;
+      handles.push(em.handleFor(i));
+    }
+    if (handles.length === 0) return;
+    const wasEmpty = this.view.selection.length === 0;
+    this.setSelection(handles, additive);
+    if (wasEmpty) this.centerOnHandle(world, handles[0]);
+  }
+
+  private centerOnHandle(world: World, handle: number): void {
+    const i = resolveHandle(world.em, handle);
+    if (i < 0) return;
+    this.view.camX = world.comp.posX[i];
+    this.view.camY = world.comp.posY[i];
   }
 
   private syncPointerPosition(): void {
@@ -516,17 +685,35 @@ class HumanInputController implements HumanInput {
       if (comp.subtype[i] !== BuildingTypeEnum.TownCenter) continue;
       this.view.camX = comp.posX[i];
       this.view.camY = comp.posY[i];
+      // In manual mode 'h' also selects the TC (AoE muscle memory: H then Q trains a villager).
+      if (this._manualControl) this.setSelection([em.handleFor(i)], false);
       return;
     }
   }
 
-  /** Recompute view.ghost.valid = placeable footprint AND player can afford the building cost. */
+  /**
+   * Recompute the ghost's per-tile validity mask (when present) and view.ghost.valid.
+   * Fills tileValid[dy*sizeX+dx] with 1/0 via a 1×1 canPlaceBuilding check per footprint tile so the
+   * renderer can tint each cell green/red; ghost.valid = all tiles placeable AND affordable.
+   * Falls back to a whole-footprint check when the mask is absent (older ghost shape).
+   */
   private refreshGhost(world: World): void {
     const ghost = this.view.ghost;
     if (!ghost) return;
     const fp = BUILDING_FOOTPRINT[ghost.building];
-    const placeable = canPlaceBuilding(world.map, ghost.tileX, ghost.tileY, fp.sizeX, fp.sizeY);
-    ghost.valid = placeable && this.canAfford(world, { building: ghost.building });
+    let all = true;
+    if (ghost.tileValid && ghost.sizeX === fp.sizeX && ghost.sizeY === fp.sizeY) {
+      for (let dy = 0; dy < fp.sizeY; dy++) {
+        for (let dx = 0; dx < fp.sizeX; dx++) {
+          const ok = canPlaceBuilding(world.map, ghost.tileX + dx, ghost.tileY + dy, 1, 1) ? 1 : 0;
+          ghost.tileValid[dy * fp.sizeX + dx] = ok;
+          if (ok === 0) all = false;
+        }
+      }
+    } else {
+      all = canPlaceBuilding(world.map, ghost.tileX, ghost.tileY, fp.sizeX, fp.sizeY);
+    }
+    ghost.valid = all && this.canAfford(world, { building: ghost.building });
   }
 
   private canAfford(world: World, item: { unit?: UnitType; building?: BuildingType }): boolean {

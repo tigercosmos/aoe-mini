@@ -14,7 +14,12 @@ export interface ViewState {
   viewportW: number; viewportH: number; // CSS pixels
   localPlayer: PlayerId;
   selection: number[];          // entity HANDLES, ascending
-  ghost: { building: BuildingType; tileX: number; tileY: number; valid: boolean } | null;
+  ghost: {
+    building: BuildingType; tileX: number; tileY: number; valid: boolean;
+    sizeX?: number;             // building footprint width in tiles (from ui/picking BUILDING_FOOTPRINT)
+    sizeY?: number;             // footprint height in tiles
+    tileValid?: Uint8Array;     // per-tile placeability mask, length sizeX*sizeY, row-major (dy*sizeX+dx), 1 = placeable
+  } | null;
   pointer?: PointerFeedback;
 }
 
@@ -66,7 +71,14 @@ export interface InputController {
   drainCommands(): Command[];               // commands issued since last drain (then cleared)
 }
 
-export interface AIConfig { maxVillagers: number; attackArmySize: number; thinkInterval: number }
+export interface AIConfig {
+  maxVillagers: number;
+  attackArmySize: number;
+  thinkInterval: number;
+  /** Preset selector; absent = 'medium'. Explicit maxVillagers/attackArmySize/thinkInterval in a
+   *  Partial<AIConfig> always override the resolved preset's values. */
+  difficulty?: 'easy' | 'medium' | 'hard';
+}
 export interface AIPlayer {
   readonly player: PlayerId;
   /** Called EVERY tick before stepWorld; must return [] on non-think ticks (tick % thinkInterval !== player % thinkInterval). Read-only World access + private RNG only. */

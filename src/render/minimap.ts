@@ -5,7 +5,7 @@
 //
 // Imports: shared only (+ PLAYER_COLORS from sibling sprites.ts).
 
-import { EntityKind } from '../shared/enums';
+import { EntityKind, ResourceNode, BuildingType } from '../shared/enums';
 import { screenToWorld, type Vec2 } from '../shared/iso';
 import type { World } from '../shared/world';
 import type { ViewState } from '../shared/interfaces';
@@ -47,8 +47,10 @@ export function drawMinimap(world: World, view: ViewState, ctx: CanvasRenderingC
       const explored = (map.explored[ti] >> lp) & 1;
       if (!explored) continue;
       const visible = (map.visible[ti] >> lp) & 1;
+      const dim = visible === 0;
       project(tx, ty, size, W, H);
-      ctx.fillStyle = miniColor(map.terrain[ti], visible === 0);
+      const node = map.resourceType[ti];
+      ctx.fillStyle = node !== ResourceNode.None ? resourceColor(node, dim) : miniColor(map.terrain[ti], dim);
       ctx.fillRect(scratch.x - half, scratch.y - half, cell, cell);
     }
   }
@@ -70,8 +72,25 @@ export function drawMinimap(world: World, view: ViewState, ctx: CanvasRenderingC
     if (kind === EntityKind.Unit && ((map.visible[ti] >> lp) & 1) === 0) continue;
     project(comp.posX[i], comp.posY[i], size, W, H);
     ctx.fillStyle = PLAYER_COLORS[comp.owner[i]] ?? PLAYER_COLORS[0];
-    ctx.fillRect(scratch.x - dot / 2, scratch.y - dot / 2, dot, dot);
+    // Buildings render larger than units so bases read at a glance (TC/Castle largest).
+    let d = dot;
+    if (kind === EntityKind.Building) {
+      const sub = comp.subtype[i];
+      d = dot + (sub === BuildingType.TownCenter || sub === BuildingType.Castle ? 3 : 2);
+    }
+    ctx.fillRect(scratch.x - d / 2, scratch.y - d / 2, d, d);
   }
+
+  // Map rhombus border framing the diamond against the black background.
+  ctx.strokeStyle = '#5b5648';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  project(0, 0, size, W, H); ctx.moveTo(scratch.x, scratch.y);
+  project(size, 0, size, W, H); ctx.lineTo(scratch.x, scratch.y);
+  project(size, size, size, W, H); ctx.lineTo(scratch.x, scratch.y);
+  project(0, size, size, W, H); ctx.lineTo(scratch.x, scratch.y);
+  ctx.closePath();
+  ctx.stroke();
 
   // Viewport rhombus: project the four screen corners back to world, then to minimap.
   ctx.strokeStyle = '#ffffff';
@@ -97,6 +116,16 @@ function viewportCorner(view: ViewState, sx: number, sy: number, size: number, W
 
 function clampTile(v: number, size: number): number {
   return v < 0 ? 0 : v >= size ? size - 1 : v;
+}
+
+function resourceColor(node: number, dim: boolean): string {
+  switch (node) {
+    case ResourceNode.Tree: return dim ? '#123317' : '#1c4f22';
+    case ResourceNode.GoldMine: return dim ? '#8f7519' : '#e8c22e';
+    case ResourceNode.StoneMine: return dim ? '#5f656c' : '#9aa2ab';
+    case ResourceNode.Forage: return dim ? '#742a27' : '#c0453f';
+    default: return dim ? '#273e1d' : '#4d7c3a';
+  }
 }
 
 function miniColor(terrain: number, dim: boolean): string {

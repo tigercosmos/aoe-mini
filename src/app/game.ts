@@ -20,17 +20,17 @@ export function startGame(
   minimap: HTMLCanvasElement,
   hudRoot: HTMLElement,
   setup: MatchSetup,
+  aiDifficulty?: 'easy' | 'medium' | 'hard',
 ): GameHandle {
   const world = createWorld(setup);
 
   // setup.players[0] -> PlayerId 1, players[1] -> PlayerId 2, ... . The human is the first non-AI slot
   // (falls back to PlayerId 1). Each AI slot gets one createAIPlayer, seeded off the match seed.
   //
-  // Use a Feudal-capable economy config (fewer villagers) rather than DEFAULT_AI_CONFIG's 18-villager
-  // "boom": at 18 villagers the planner trains villagers faster than it banks the 500 food for the
-  // Feudal Age and never leaves the Dark Age, so the human would face a stuck opponent. This is the
-  // same aggressive config the headless-match merge gate validates (reaches Feudal, plays decisively).
-  const AI_CONFIG = { maxVillagers: 12, attackArmySize: 8, thinkInterval: 10 };
+  // The AI now banks resources for age-up (see src/ai), so the default preset economy reaches Feudal
+  // and beyond on its own — no crippled villager cap needed. Difficulty selects the tuning preset
+  // (Easy/Medium/Hard); createAIPlayer fills maxVillagers/attackArmySize/thinkInterval from it.
+  const AI_CONFIG = { difficulty: aiDifficulty ?? 'medium' } as const;
   let localPlayer = 1;
   const ais: AIPlayer[] = [];
   for (let i = 0; i < setup.players.length; i++) {

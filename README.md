@@ -8,27 +8,36 @@ civilizations, four ages, economy → military → conquest.
 
 ```bash
 npm install
-npm run dev        # open the printed http://localhost:5173  (add ?seed=1234 to pick a map)
+npm run dev        # open the printed http://localhost:5173
 ```
 
-You play **Britons** (blue) vs **AI Franks** (red) and **AI Mongols** (green).
+URL options: `?seed=1234` picks a map; `?ai=easy|medium|hard` sets the opponent difficulty (default
+`medium`). e.g. `http://localhost:5173/?seed=7&ai=hard`.
+
+You play **Britons** (blue) vs **AI Franks** (red) and **AI Mongols** (green). The game opens in
+**Auto Play** (an AI runs your civ so you can watch); click **Manual** in the top bar to take over.
 
 Other scripts:
 
 ```bash
 npm run build      # type-check + production bundle to dist/
-npm test           # full Vitest suite (194 tests)
+npm test           # full Vitest suite (214 tests)
 npm run headless   # deterministic AI-vs-AI match (no browser) — the integration merge gate
 ```
 
 ## Controls
 
-- **Left-drag** box-select your units · **left-click** select · **shift-click** add to selection
+- **Left-drag** box-select your units · **left-click** select · **shift-click** add to selection · **double-click** selects all of that type on screen
 - **Right-click**: contextual order — move, attack (enemy), gather (resource / sheep / farm), or set a building's rally point
-- **Build**: select villagers → click a build button in the HUD → click a tile (Esc cancels)
-- **Train / research**: select a building → use its HUD buttons
-- **Camera**: WASD / arrow keys / screen-edge pan · mouse wheel zoom · **H** jumps to your Town Center
-- Control groups: **Ctrl+1..9** to set, **1..9** to recall
+- **Build**: select villagers → click a build button in the HUD (or its hotkey) → click a tile; the ghost shows the true footprint tinted green/red per tile (Esc cancels)
+- **Train / research**: select a building → use its HUD buttons or their shown hotkeys
+- **Idle villagers**: **.** cycles to the next idle villager (selects + centers) · **,** selects all idle villagers · the HUD shows a live idle count
+- **Select army**: **m** selects all your military units
+- **Camera**: WASD / arrow keys / screen-edge pan · mouse wheel zoom · **H** jumps to (and selects) your Town Center
+- **Minimap**: left-click / drag to move the camera · right-click issues a move / attack-move / rally to that spot · red pings flag attacks
+- **Alerts**: a red toast + minimap ping warn when you're under attack; **Space** jumps the camera there
+- **Help**: **F1** (or **?**) toggles the full keyboard reference
+- Control groups: **Ctrl+1..9** to set, **1..9** to recall · simulation speed 1×–5× and Auto/Manual toggle in the top bar
 
 ## What's in the slice
 
@@ -42,7 +51,15 @@ npm run headless   # deterministic AI-vs-AI match (no browser) — the integrati
   - **Britons** — foot archers +1 range, Town Centers −50% wood, shepherds +25%; unique **Longbowman**
   - **Franks** — Knights +20% HP, foragers +25%, Castles −25% cost; unique **Throwing Axeman**
   - **Mongols** — Scout line +30% HP, Mangudai fire faster, cavalry-archer focus; unique **Mangudai**
-- **AI opponents** (economy → build order → army → attack waves) and **conquest victory**
+- **Smarter AI opponents** with **Easy / Medium / Hard** presets (`?ai=`): a shared-budget economy that
+  *banks* resources for age-up (reliably advances Dark → Feudal → Castle on a healthy villager count),
+  need-driven gathering (forage → sheep → anticipatory farms; balances food/wood/gold to actual demand),
+  counter-aware unit composition, base defense (pulls the army home and evacuates villagers under
+  attack), a deterministic scout, and massed focus-fire attack waves — ending in **conquest victory**
+- **Presentation**: multi-tone terrain with shorelines and depleting resource nodes, unit walk/attack/
+  death animation, construction/build-up and player-colored banners on buildings, AoE-style selection
+  rings, a rich HUD (resource icons, per-resource villager counts, game clock, age-up progress,
+  sprite portraits, tooltips) and an end-of-match stats screen
 
 ## Architecture
 
@@ -74,7 +91,7 @@ backend can replace).
 
 ## Tests
 
-194 Vitest tests: per-module units (PRNG goldens, entity/generation semantics, spatial-query
+214 Vitest tests: per-module units (PRNG goldens, entity/generation semantics, spatial-query
 exactness, A* + re-path, content stat resolution, command validation, gather/build/combat), a
 determinism suite (checksum-equal reruns + a source static-scan), browser-layer tests (picking
 round-trips the shared iso math, synthetic input → Commands, loop tick-accounting), and the
