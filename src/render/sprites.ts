@@ -101,6 +101,34 @@ function shade(hex: string, f: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Shared "AoE II miniature" material palette. Neutral gambeson/leather/steel
+// bodies lit from the TOP-RIGHT (matching the buildings' bright SE face); player
+// colour is reserved for heraldry so armies read as soldiers, not colour blobs.
+// ---------------------------------------------------------------------------
+
+const STEEL_LIGHT = '#dfe4e9';
+const STEEL = '#c7ccd1';
+const STEEL_DARK = '#7e8790';
+const LEATHER = '#8b6b4a';
+const LEATHER_DARK = '#5a4632';
+const WOOD = '#76542e';
+const CLOTH = '#b8ad98';
+const GAMBESON = '#b8a888';
+const SKIN = '#e1bd8b';
+const SKIN_SHADE = '#c49f70';
+const HAIR = '#7d5b32';
+const BOOT = '#2c2722';
+const KEYLINE = 'rgba(24,18,12,0.5)';
+
+/** Re-stroke the current path as a 1px dark keyline — the outline that keeps a
+ *  28px-tall figure readable at zoom 0.5. Call immediately after filling a mass. */
+function keyline(ctx: CanvasRenderingContext2D): void {
+  ctx.strokeStyle = KEYLINE;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
 // Sprite cache.
 // ---------------------------------------------------------------------------
 
@@ -176,181 +204,429 @@ function rasterizeUnit(subtype: number, owner: number): Sprite {
   const color = PLAYER_COLORS[owner] ?? PLAYER_COLORS[0];
   ctx.clearRect(0, 0, UNIT_W, UNIT_H);
 
-  // Ground shadow — two concentric ellipses for a soft AO skirt.
-  const shR = isCavalry(subtype) ? 19 : 13;
-  const shRy = isCavalry(subtype) ? 6 : 5;
-  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  const cav = isCavalry(subtype);
+
+  // Soft radial ground shadow (a real falloff, not two flat ellipses) so the
+  // figure sits on the terrain instead of floating on a hard disc.
+  const shR = cav ? 18 : 11;
+  const shRy = cav ? 6 : 4.5;
+  const gshadow = ctx.createRadialGradient(UNIT_AX, UNIT_AY, 2, UNIT_AX, UNIT_AY, shR + 2);
+  gshadow.addColorStop(0, 'rgba(0,0,0,0.30)');
+  gshadow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gshadow;
   ellipse(ctx, UNIT_AX, UNIT_AY, shR + 2, shRy + 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,0.26)';
-  ellipse(ctx, UNIT_AX, UNIT_AY, shR, shRy);
-  ctx.fill();
 
-  if (subtype === UnitType.Sheep) { drawSheep(ctx); return { canvas, anchorX: UNIT_AX, anchorY: UNIT_AY }; }
-
-  const body = color;
-  const dark = shade(color, 0.62);
-  const light = shade(color, 1.2);
-  const steel = '#c7ccd1';
-  const steelDark = '#7e8790';
-  const wood = '#76542e';
-
-  if (isCavalry(subtype)) {
-    drawHorse(ctx, body, dark, light, subtype);
-  } else {
-    drawFoot(ctx, body, dark, light, subtype);
+  if (subtype === UnitType.Sheep) {
+    drawSheep(ctx);
+    return { canvas, anchorX: UNIT_AX, anchorY: UNIT_AY };
   }
 
-  // Class-specific weapon glyphs.
-  if (subtype === UnitType.Spearman) {
-    ctx.strokeStyle = wood; ctx.lineWidth = 2;
-    line(ctx, 42, 8, 31, 47);
-    ctx.fillStyle = steel;
-    tri(ctx, 43, 5, 47, 13, 39, 11);
-  } else if (subtype === UnitType.Militia || subtype === UnitType.ManAtArms) {
-    ctx.strokeStyle = steel; ctx.lineWidth = subtype === UnitType.ManAtArms ? 3 : 2;
-    line(ctx, 39, 41, 48, 18);
-    ctx.strokeStyle = steelDark; ctx.lineWidth = 1;
-    line(ctx, 38, 41, 45, 20);
-    ctx.strokeStyle = '#5a3d1e'; ctx.lineWidth = 2;
-    line(ctx, 36, 41, 41, 37);
-  } else if (subtype === UnitType.ThrowingAxeman) {
-    ctx.strokeStyle = wood; ctx.lineWidth = 2; line(ctx, 40, 39, 47, 22);
-    ctx.fillStyle = steel;
-    ctx.beginPath(); ctx.arc(48, 21, 5, -0.9, 1.8); ctx.stroke();
-    tri(ctx, 47, 16, 55, 20, 47, 25);
-  } else if (isArcher(subtype)) {
-    ctx.strokeStyle = wood; ctx.lineWidth = 2;
-    const r = subtype === UnitType.Longbowman ? 19 : 15;
-    ctx.beginPath(); ctx.arc(39, 31, r, -1.2, 1.2); ctx.stroke();
-    ctx.strokeStyle = '#efe7d4'; ctx.lineWidth = 1;
-    line(ctx, 39 + Math.cos(-1.2) * r, 31 + Math.sin(-1.2) * r, 39 + Math.cos(1.2) * r, 31 + Math.sin(1.2) * r);
-    ctx.strokeStyle = steelDark;
-    line(ctx, 23, 32, 51, 25);
-  } else if (subtype === UnitType.Knight) {
-    ctx.strokeStyle = steel; ctx.lineWidth = 2; line(ctx, 46, 7, 46, 37);
-    ctx.fillStyle = color;
-    tri(ctx, 46, 11, 55, 17, 46, 25);
-  } else if (subtype === UnitType.Mangudai) {
-    ctx.strokeStyle = wood; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(45, 29, 13, -1.1, 1.1); ctx.stroke();
-    ctx.strokeStyle = steelDark; ctx.lineWidth = 1;
-    line(ctx, 31, 31, 54, 24);
-  } else if (subtype === UnitType.Villager) {
-    ctx.strokeStyle = wood; ctx.lineWidth = 2; line(ctx, 40, 40, 47, 22);
-    ctx.fillStyle = steel; ctx.fillRect(44, 19, 10, 4);
-  }
+  if (cav) drawHorse(ctx, color, subtype);
+  else drawFoot(ctx, color, subtype);
+
+  drawWeapon(ctx, color, subtype);
 
   return { canvas, anchorX: UNIT_AX, anchorY: UNIT_AY };
 }
 
-function drawFoot(ctx: CanvasRenderingContext2D, body: string, dark: string, light: string, subtype: number): void {
+// Per-class weapon glyph, drawn last so it reads on top of the figure. Distinct
+// silhouette per class is the fastest friend/foe + role read at zoom 0.5.
+function drawWeapon(ctx: CanvasRenderingContext2D, color: string, subtype: number): void {
+  if (subtype === UnitType.Spearman) {
+    // Longest, steepest weapon in the roster — the instant spearman read.
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2; line(ctx, 44, 4, 30, 48);
+    ctx.strokeStyle = shade(WOOD, 1.25); ctx.lineWidth = 1; line(ctx, 45, 5, 31, 48);
+    ctx.fillStyle = STEEL; tri(ctx, 45, 2, 48, 10, 41, 8);
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1; line(ctx, 45, 2, 48, 10);
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    line(ctx, 43, 10, 39, 12); line(ctx, 43, 10, 40, 14); line(ctx, 43, 10, 44, 14);
+    return;
+  }
+  if (subtype === UnitType.Militia) {
+    ctx.strokeStyle = STEEL; ctx.lineWidth = 2; line(ctx, 38, 34, 45, 18);
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1; line(ctx, 39, 33, 46, 18);
+    ctx.strokeStyle = LEATHER_DARK; ctx.lineWidth = 2; line(ctx, 35, 32, 41, 30);
+    return;
+  }
+  if (subtype === UnitType.ManAtArms) {
+    ctx.strokeStyle = STEEL; ctx.lineWidth = 3; line(ctx, 38, 35, 46, 15);
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1; line(ctx, 40, 34, 47, 16);
+    ctx.strokeStyle = '#4a4f55'; ctx.lineWidth = 2; line(ctx, 34, 32, 41, 29);
+    return;
+  }
+  if (subtype === UnitType.ThrowingAxeman) {
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2; line(ctx, 40, 39, 47, 20);
+    ctx.fillStyle = STEEL; // curved francisca bit as an arc-bounded wedge (no beziers).
+    ctx.beginPath(); ctx.moveTo(46, 17); ctx.arc(49, 21, 5, -1.3, 0.9); ctx.lineTo(46, 24); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(49, 21, 5, -1.3, 0.9); ctx.stroke();
+    ctx.fillStyle = STEEL; ctx.fillRect(33, 38, 3, 2); // spare axe on the belt
+    return;
+  }
+  if (isArcher(subtype)) {
+    const longbow = subtype === UnitType.Longbowman;
+    const bx = longbow ? 36 : 38, by = longbow ? 30 : 31, r = longbow ? 20 : 14;
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by, r, -1.15, 1.15); ctx.stroke();
+    ctx.strokeStyle = shade(WOOD, 1.3); ctx.lineWidth = 1; // belly highlight
+    ctx.beginPath(); ctx.arc(bx, by, r, -0.85, 0.85); ctx.stroke();
+    const a = 1.15;
+    ctx.strokeStyle = 'rgba(239,231,212,0.9)'; ctx.lineWidth = 1;
+    line(ctx, bx + Math.cos(-a) * r, by + Math.sin(-a) * r, bx + Math.cos(a) * r, by + Math.sin(a) * r);
+    ctx.strokeStyle = STEEL_DARK; ctx.lineWidth = 1; line(ctx, bx - 3, by, bx + r - 1, by);
+    ctx.fillStyle = STEEL_LIGHT; tri(ctx, bx + r - 1, by - 1.6, bx + r + 2, by, bx + r - 1, by + 1.6);
+    return;
+  }
+  if (subtype === UnitType.Villager) {
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2; line(ctx, 40, 40, 46, 24);
+    ctx.fillStyle = STEEL; ctx.fillRect(43, 21, 8, 4);
+    ctx.fillStyle = STEEL_LIGHT; ctx.fillRect(43, 21, 8, 1);
+    return;
+  }
+  if (subtype === UnitType.Knight) {
+    // Flagged lance — grandest silhouette; scout carries a bare stick instead.
+    ctx.strokeStyle = STEEL; ctx.lineWidth = 2; line(ctx, 46, 7, 46, 37);
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1; line(ctx, 47, 7, 47, 37);
+    ctx.fillStyle = color; tri(ctx, 46, 10, 55, 14, 46, 19);
+    ctx.fillStyle = shade(color, 0.7); tri(ctx, 46, 14, 55, 14, 46, 19);
+    return;
+  }
+  if (subtype === UnitType.ScoutCavalry) {
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2; line(ctx, 38, 6, 42, 28);
+    ctx.fillStyle = STEEL; tri(ctx, 37, 3, 40, 9, 36, 8);
+    return;
+  }
+  if (subtype === UnitType.Mangudai) {
+    const bx = 43, by = 29, r = 12;
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by, r, -1.1, 1.1); ctx.stroke();
+    const a = 1.1;
+    const ex0 = bx + Math.cos(-a) * r, ey0 = by + Math.sin(-a) * r;
+    const ex1 = bx + Math.cos(a) * r, ey1 = by + Math.sin(a) * r;
+    ctx.lineWidth = 2; // recurve kick-back at the limb tips
+    line(ctx, ex0, ey0, ex0 - 2, ey0 - 1);
+    line(ctx, ex1, ey1, ex1 - 2, ey1 + 1);
+    ctx.strokeStyle = 'rgba(239,231,212,0.9)'; ctx.lineWidth = 1; line(ctx, ex0, ey0, ex1, ey1);
+    ctx.fillStyle = LEATHER_DARK; ctx.fillRect(33, 30, 4, 9); // hip quiver
+    ctx.strokeStyle = '#d9d2bd'; ctx.lineWidth = 1; line(ctx, 34, 30, 34, 26); line(ctx, 36, 30, 36, 26);
+    return;
+  }
+}
+
+// Paper-doll foot soldier, drawn back-to-front so the memoized atlas bakes a fully
+// shaded figurine: neutral gambeson/leather/steel body + top highlight + 1px keyline,
+// with player colour confined to heraldry (sash / surcoat / hood / shield / plume).
+// Feet straddle x=28 and land exactly on y=50 so the anchor + walk bob stay honest.
+function drawFoot(ctx: CanvasRenderingContext2D, color: string, subtype: number): void {
   const villager = subtype === UnitType.Villager;
-  const topY = villager ? 23 : 18;
-  const w = villager ? 15 : 17;
-  const skin = '#e1bd8b';
-  const boot = '#2c2722';
+  const axeman = subtype === UnitType.ThrowingAxeman;
+  const archerCls = isArcher(subtype);
+  const manAtArms = subtype === UnitType.ManAtArms;
 
-  ctx.fillStyle = shade(body, 0.48);
-  ellipse(ctx, UNIT_AX - 1, topY + 22, w * 0.62, 10);
-  ctx.fill();
+  const topY = villager ? 23 : 18;       // head-centre y (villager stoops lower)
+  const headX = villager ? 27 : 28;
+  const torsoW = villager ? 15 : 17;
+  const torsoTop = topY + 6;
+  const torsoBot = 44;
+  const torsoH = torsoBot - torsoTop;
+  const half = torsoW / 2;
 
-  ctx.fillStyle = dark;
-  ctx.fillRect(UNIT_AX - 7, 42, 5, 9);
-  ctx.fillRect(UNIT_AX + 2, 42, 5, 9);
-  ctx.fillStyle = boot;
-  ctx.fillRect(UNIT_AX - 9, 50, 8, 3);
-  ctx.fillRect(UNIT_AX + 1, 50, 8, 3);
+  // Garment palette — most bodies are neutral cloth/mail/leather; only Militia and
+  // Spearman wear a player-colour tunic outright.
+  let tunic: string;
+  if (subtype === UnitType.Militia || subtype === UnitType.Spearman) tunic = color;
+  else if (manAtArms) tunic = '#8d949c';
+  else if (subtype === UnitType.Longbowman) tunic = '#e8e0cc';
+  else if (subtype === UnitType.Archer) tunic = LEATHER;
+  else if (axeman) tunic = GAMBESON;
+  else tunic = '#a3906f';
+  const tunicShade = shade(tunic, 0.68);
+  const tunicHi = shade(tunic, 1.25);
+  const trouser = manAtArms ? '#6a7178' : '#5b4a33';
+  const bareArms = villager || axeman;
+  const sleeve = bareArms ? SKIN : tunic;
+  const sleeveShade = bareArms ? SKIN_SHADE : tunicShade;
 
-  ctx.fillStyle = body;
-  roundBody(ctx, UNIT_AX - w / 2, topY + 8, w, 24);
-  ctx.fillStyle = light;
-  ctx.fillRect(UNIT_AX - w / 2 + 1, topY + 9, w - 2, 4);
+  // (1) back arm.
+  ctx.strokeStyle = sleeve; ctx.lineWidth = 3; line(ctx, 24, torsoTop + 3, 19, torsoTop + 15);
+  ctx.strokeStyle = sleeveShade; ctx.lineWidth = 1; line(ctx, 24, torsoTop + 4, 19, torsoTop + 16);
 
-  ctx.strokeStyle = skin; ctx.lineWidth = 3;
-  line(ctx, UNIT_AX - 7, topY + 18, UNIT_AX - 14, topY + 29);
-  line(ctx, UNIT_AX + 7, topY + 18, UNIT_AX + 15, topY + 28);
-
-  if (isInfantry(subtype)) {
-    ctx.fillStyle = shade(body, 0.7);
-    ellipse(ctx, UNIT_AX - 12, topY + 23, 6, 9);
-    ctx.fill();
-    ctx.strokeStyle = shade(body, 0.35); ctx.lineWidth = 1;
-    ctx.stroke();
-  } else if (isArcher(subtype)) {
-    ctx.strokeStyle = '#5f4120'; ctx.lineWidth = 2;
-    line(ctx, UNIT_AX - 10, topY + 11, UNIT_AX - 3, topY + 28);
-  } else if (villager) {
-    ctx.fillStyle = '#8b6b3e';
-    ctx.fillRect(UNIT_AX - 11, topY + 29, 7, 7);
-    ctx.fillStyle = '#c7a66f';
-    ctx.fillRect(UNIT_AX - 10, topY + 30, 5, 2);
+  // (1b) archer back quiver with fletched shafts poking over the shoulder.
+  if (archerCls) {
+    ctx.fillStyle = LEATHER_DARK; ctx.fillRect(17, topY + 8, 5, 12);
+    ctx.strokeStyle = '#d9d2bd'; ctx.lineWidth = 1;
+    for (let k = 0; k < 3; k++) { const qx = 18 + k * 2; line(ctx, qx, topY + 8, qx, topY + 2); }
+    ctx.fillStyle = STEEL_LIGHT;
+    for (let k = 0; k < 3; k++) ctx.fillRect(18 + k * 2, topY + 1, 1, 1);
   }
 
-  ctx.fillStyle = skin;
-  ctx.beginPath(); ctx.arc(UNIT_AX, topY, 5.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = villager ? '#7d5b32' : '#6b6f74';
-  ctx.fillRect(UNIT_AX - 7, topY - 7, 14, 4);
-  if (!villager) {
-    ctx.fillStyle = '#4d5358';
-    ctx.fillRect(UNIT_AX - 5, topY - 10, 10, 3);
+  // (2) legs + boots (+ per-foot contact shadows and a body AO pool).
+  ctx.fillStyle = trouser;
+  ctx.fillRect(22, 40, 4, 10); ctx.fillRect(30, 40, 4, 10);
+  ctx.fillStyle = shade(trouser, 1.2); ctx.fillRect(22, 40, 4, 2); ctx.fillRect(30, 40, 4, 2);
+  ctx.fillStyle = BOOT; ctx.fillRect(21, 47, 6, 3); ctx.fillRect(29, 47, 6, 3);
+  ctx.fillStyle = shade(BOOT, 1.7); ctx.fillRect(21, 47, 6, 1); ctx.fillRect(29, 47, 6, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ellipse(ctx, 24, 50, 3, 1.5); ctx.fill();
+  ellipse(ctx, 32, 50, 3, 1.5); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  ellipse(ctx, 28, 46, 6, 2.5); ctx.fill();
+
+  // (3) tunic mass + top-right highlight + lower-left core shadow + keyline.
+  ctx.fillStyle = tunic;
+  roundBody(ctx, 28 - half, torsoTop, torsoW, torsoH); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = tunicShade; ctx.fillRect(28 - half + 1, torsoTop + 5, torsoW * 0.42, torsoH - 8);
+  ctx.fillStyle = tunicHi; ctx.fillRect(28 - half + 1, torsoTop + 1, torsoW - 2, 3);
+
+  // Class torso detailing.
+  if (manAtArms) {
+    ctx.fillStyle = '#6a7178'; // mail stipple
+    const dots = [[24, 26], [31, 27], [27, 30], [32, 33], [24, 35], [30, 38]];
+    for (let k = 0; k < dots.length; k++) ctx.fillRect(dots[k][0], dots[k][1], 1, 1);
+    ctx.fillStyle = color; ctx.fillRect(24, torsoTop + 1, 8, torsoH - 3); // surcoat panel
+    ctx.fillStyle = shade(color, 0.7); ctx.fillRect(24, torsoTop + 1 + (torsoH - 3) / 2, 8, (torsoH - 3) / 2);
+    ctx.strokeStyle = '#565d64'; ctx.lineWidth = 1; // mail-skirt courses
+    for (let k = 0; k < 3; k++) line(ctx, 28 - half + 2, torsoBot - 6 + k * 2, 28 + half - 2, torsoBot - 6 + k * 2);
+  } else if (subtype === UnitType.Longbowman) {
+    ctx.fillStyle = color; ctx.fillRect(21, topY + 12, 15, 3); // player chest band
+  }
+
+  // (3b) villager satchel.
+  if (villager) {
+    ctx.fillStyle = LEATHER; ctx.fillRect(19, topY + 14, 6, 7);
+    ctx.strokeStyle = LEATHER_DARK; ctx.lineWidth = 1; line(ctx, 19, topY + 16, 25, topY + 16);
+  }
+
+  // (4) belt — a player sash for the villager, plain leather otherwise.
+  if (villager) {
+    ctx.fillStyle = color; ctx.fillRect(21, topY + 18, 15, 3);
+    ctx.fillStyle = shade(color, 1.2); ctx.fillRect(27, topY + 18, 2, 3);
+  } else {
+    ctx.fillStyle = '#3c2f1e'; ctx.fillRect(28 - half + 1, torsoBot - 5, torsoW - 2, 3);
+    ctx.fillStyle = '#8a6a3a'; ctx.fillRect(27, torsoBot - 5, 2, 3);
+  }
+
+  // (5) front arm + hand, reaching toward the class weapon.
+  let fhx = 38, fhy = torsoTop + 13;
+  if (archerCls) { fhx = 36; fhy = 31; }
+  else if (subtype === UnitType.Spearman) { fhx = 36; fhy = 28; }
+  else if (villager) { fhx = 39; fhy = 36; }
+  else if (axeman) { fhx = 39; fhy = 33; }
+  ctx.strokeStyle = sleeve; ctx.lineWidth = 3; line(ctx, 32, torsoTop + 3, fhx, fhy);
+  ctx.strokeStyle = sleeveShade; ctx.lineWidth = 1; line(ctx, 33, torsoTop + 4, fhx, fhy + 1);
+  ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(fhx, fhy, 1.6, 0, Math.PI * 2); ctx.fill();
+
+  // (6) head — neck, dome, lower-left face shadow, eye dot (east sprite looks right).
+  ctx.fillStyle = SKIN_SHADE; ctx.fillRect(headX - 2, topY + 3, 4, 4);
+  ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(headX, topY, 5.5, 0, Math.PI * 2); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = SKIN_SHADE; ctx.beginPath(); ctx.arc(headX - 1.5, topY + 1, 4, 0.5, 2.7); ctx.fill();
+  ctx.fillStyle = '#2a2018'; ctx.fillRect(30, topY - 1, 1, 1);
+
+  // (7) headgear + (8) shield.
+  drawHeadgear(ctx, color, subtype, headX, topY);
+  drawShield(ctx, color, subtype, topY);
+}
+
+// Distinct >= 2px headgear silhouette + hue per class (portraits blit these at ~2x).
+function drawHeadgear(ctx: CanvasRenderingContext2D, color: string, subtype: number, headX: number, topY: number): void {
+  const dome = (r: number, fill: string): void => {
+    ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(headX, topY - 1, r, Math.PI, Math.PI * 2); ctx.fill(); keyline(ctx);
+  };
+  if (subtype === UnitType.Villager) {
+    ctx.fillStyle = HAIR; ctx.fillRect(headX - 5, topY - 1, 10, 3); // fringe under the brim
+    dome(6, '#c8a95e');
+    ctx.fillStyle = shade('#c8a95e', 0.82); ctx.fillRect(headX - 8, topY - 1, 16, 2); // straw brim
+    return;
+  }
+  if (subtype === UnitType.Militia) {
+    dome(5.5, LEATHER);
+    ctx.fillStyle = LEATHER_DARK; ctx.fillRect(headX - 7, topY - 3, 14, 2);
+    return;
+  }
+  if (subtype === UnitType.ManAtArms) {
+    dome(5.5, STEEL);
+    ctx.fillStyle = STEEL_DARK; ellipse(ctx, headX, topY - 4, 9, 2.5); ctx.fill(); // kettle brim
+    ctx.fillStyle = STEEL_LIGHT; ctx.fillRect(headX - 1, topY - 6, 3, 3);
+    return;
+  }
+  if (subtype === UnitType.Spearman) {
+    ctx.fillStyle = STEEL; tri(ctx, headX, topY - 9, headX + 6, topY - 2, headX - 6, topY - 2); keyline(ctx);
+    ctx.fillStyle = STEEL_LIGHT; tri(ctx, headX, topY - 9, headX + 2, topY - 4, headX, topY - 3);
+    ctx.strokeStyle = STEEL_DARK; ctx.lineWidth = 1; line(ctx, headX, topY - 2, headX, topY + 1); // nasal
+    return;
+  }
+  if (subtype === UnitType.Longbowman) {
+    dome(5.5, LEATHER);
+    ctx.fillStyle = LEATHER_DARK; ellipse(ctx, headX, topY - 3, 8, 2.5); ctx.fill();
+    return;
+  }
+  if (subtype === UnitType.Archer || subtype === UnitType.ThrowingAxeman) {
+    ctx.fillStyle = color; // player hood — a large heraldic accent framing the face
+    ctx.beginPath(); ctx.arc(headX, topY - 1, 6.5, Math.PI, Math.PI * 2); ctx.fill(); keyline(ctx);
+    ctx.fillStyle = shade(color, 0.7); ctx.fillRect(headX - 6, topY - 1, 2, 5);
+    ctx.fillStyle = color; ctx.fillRect(headX + 4, topY - 1, 2, 5);
+    return;
   }
 }
 
-function drawHorse(ctx: CanvasRenderingContext2D, body: string, dark: string, light: string, subtype: number): void {
-  const horse = subtype === UnitType.Knight ? '#8b6b4a' : '#6f5136';
-  const horseDark = '#3d2b1e';
-  // legs
-  ctx.fillStyle = horseDark;
-  ctx.fillRect(12, 38, 4, 13);
-  ctx.fillRect(21, 39, 4, 12);
-  ctx.fillRect(33, 39, 4, 12);
-  ctx.fillRect(43, 38, 4, 13);
-  // body
-  ctx.fillStyle = horse;
-  ellipse(ctx, 29, 36, 22, 10);
-  ctx.fill();
-  ctx.fillStyle = '#c7b08a';
-  ellipse(ctx, 25, 33, 12, 4);
-  ctx.fill();
-  // neck + head
-  ctx.fillStyle = horseDark;
-  ctx.beginPath();
-  ctx.moveTo(43, 34); ctx.lineTo(50, 18); ctx.lineTo(55, 21); ctx.lineTo(47, 37); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#141414';
-  ctx.fillRect(51, 21, 2, 2);
-  // rider
-  ctx.fillStyle = subtype === UnitType.Knight ? '#c9ced4' : body;
-  roundBody(ctx, 24, 17, 11, 17);
-  ctx.fillStyle = light;
-  ctx.fillRect(24, 19, 11, 4);
-  ctx.fillStyle = '#e3c39b';
-  ctx.beginPath(); ctx.arc(30, 14, 4.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = subtype === UnitType.Knight ? '#9aa0a6' : dark;
-  ctx.fillRect(24, 8, 12, 4);
+// Left-arm shields — small enough to keep the body silhouette, coloured per faction.
+function drawShield(ctx: CanvasRenderingContext2D, color: string, subtype: number, topY: number): void {
+  if (subtype === UnitType.Militia) {
+    ctx.fillStyle = WOOD; ctx.beginPath(); ctx.arc(16, topY + 22, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = shade(WOOD, 0.6); ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = STEEL; ctx.beginPath(); ctx.arc(16, topY + 22, 2, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  if (subtype === UnitType.ManAtArms) {
+    ctx.fillStyle = color; tri(ctx, 12, topY + 16, 22, topY + 16, 17, topY + 30); keyline(ctx);
+    ctx.strokeStyle = shade(color, 1.25); ctx.lineWidth = 1; line(ctx, 14, topY + 17, 20, topY + 26);
+    return;
+  }
+  if (subtype === UnitType.Spearman) {
+    ctx.fillStyle = LEATHER_DARK; ctx.beginPath(); ctx.arc(15, topY + 20, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = STEEL; ctx.beginPath(); ctx.arc(15, topY + 20, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
+// Shared horse kit (chest + rump + belly ellipses, arched neck, mane, tail, 4 legs
+// whose hooves land on y=50) parameterised by coat + bulk, plus a class-specific rider.
+function drawHorse(ctx: CanvasRenderingContext2D, color: string, subtype: number): void {
+  const knight = subtype === UnitType.Knight;
+  const mang = subtype === UnitType.Mangudai;
+  const coat = knight ? '#5a4632' : mang ? '#6b5b46' : '#c4a26a'; // bay / steppe dun / palomino
+  const coatDark = shade(coat, 0.72);
+  const coatHi = shade(coat, 1.2);
+  const hoof = '#1d1a17';
+
+  // Tail (behind the rump) — three tapered strokes.
+  ctx.strokeStyle = shade(coat, 0.55);
+  ctx.lineWidth = 2; line(ctx, 10, 33, 6, 40);
+  ctx.lineWidth = 1.5; line(ctx, 9, 34, 5, 42);
+  ctx.lineWidth = 1; line(ctx, 11, 35, 5, 44);
+
+  // Legs — rear pair offset + darker for depth; hooves sit exactly on y=50.
+  ctx.fillStyle = coatDark; ctx.fillRect(34, 38, 4, 7); ctx.fillRect(41, 38, 4, 7);
+  ctx.fillStyle = shade(coat, 0.6); ctx.fillRect(35, 44, 3, 6); ctx.fillRect(42, 44, 3, 6);
+  ctx.fillStyle = coat; ctx.fillRect(15, 38, 4, 7); ctx.fillRect(22, 38, 4, 7);
+  ctx.fillStyle = coatDark; ctx.fillRect(16, 44, 3, 6); ctx.fillRect(23, 44, 3, 6);
+  ctx.fillStyle = hoof;
+  ctx.fillRect(16, 48, 3, 2); ctx.fillRect(23, 48, 3, 2); ctx.fillRect(35, 48, 3, 2); ctx.fillRect(42, 48, 3, 2);
+
+  // Body.
+  ctx.fillStyle = coat;
+  ellipse(ctx, 20, 34, 10, 9); ctx.fill(); keyline(ctx); // chest
+  ellipse(ctx, 36, 35, 11, 9); ctx.fill(); keyline(ctx); // rump
+  ctx.fillStyle = coatDark; ellipse(ctx, 30, 39, 14, 5); ctx.fill(); // belly
+  ctx.fillStyle = coatHi; ellipse(ctx, 33, 31, 8, 3); ctx.fill(); // back highlight
+  if (mang) {
+    ctx.strokeStyle = coatDark; ctx.lineWidth = 1; // shaggy belly fringe
+    line(ctx, 24, 42, 24, 45); line(ctx, 30, 43, 30, 46); line(ctx, 36, 42, 36, 45);
+  }
+
+  // Neck + head + mane.
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.moveTo(43, 32); ctx.lineTo(48, 16); ctx.lineTo(53, 19); ctx.lineTo(47, 36); ctx.closePath(); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = coat; ellipse(ctx, 50, 17, 4.5, 3.5); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = shade(coat, 0.85); ctx.fillRect(52, 16, 3, 3); // muzzle
+  ctx.fillStyle = '#141414'; ctx.fillRect(50, 16, 1, 1);         // eye
+  ctx.fillStyle = coatDark; tri(ctx, 48, 12, 50, 16, 46, 15);    // ear
+  ctx.strokeStyle = shade(coat, 0.5); ctx.lineWidth = 2;
+  line(ctx, 47, 17, 45, 20); line(ctx, 46, 20, 44, 23); line(ctx, 45, 23, 43, 26); line(ctx, 44, 26, 43, 29);
+
+  // Barding / saddle blanket (player-colour heraldry over the barrel).
+  if (knight) {
+    ctx.fillStyle = color; ctx.fillRect(14, 30, 30, 11); // caparison
+    for (let k = 0; k < 4; k++) { const cx2 = 18 + k * 8; ctx.beginPath(); ctx.arc(cx2, 41, 4, 0, Math.PI); ctx.fill(); } // scallop hem
+    ctx.fillStyle = shade(color, 1.25); ctx.fillRect(14, 30, 30, 2);
+    ctx.fillStyle = shade(color, 0.7); ctx.fillRect(14, 37, 30, 4);
+    ctx.strokeStyle = KEYLINE; ctx.lineWidth = 1; line(ctx, 14, 30, 44, 30);
+  } else if (subtype === UnitType.ScoutCavalry) {
+    ctx.fillStyle = color; ctx.fillRect(21, 31, 14, 4);
+    ctx.fillStyle = shade(color, 0.7); ctx.fillRect(21, 34, 14, 1);
+  }
+
+  // Rider.
+  const riderBody = knight ? STEEL_LIGHT : CLOTH;
+  ctx.strokeStyle = knight ? STEEL_DARK : '#4a3a26'; ctx.lineWidth = 3; line(ctx, 27, 30, 24, 37); // near thigh
+  ctx.fillStyle = riderBody; roundBody(ctx, 23, 15, 11, 16); ctx.fill(); keyline(ctx);
+  if (knight) {
+    ctx.fillStyle = STEEL_DARK; ctx.fillRect(24, 24, 9, 7); // lower plate shade
+    const sheen = ctx.createRadialGradient(29, 19, 1, 29, 21, 8);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.5)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen; ellipse(ctx, 29, 21, 6, 8); ctx.fill();
+  } else {
+    ctx.fillStyle = shade(CLOTH, 1.2); ctx.fillRect(24, 16, 9, 3);
+    ctx.fillStyle = color; ctx.fillRect(24, 19, 9, 3); // player sash accent
+  }
+  ctx.strokeStyle = knight ? STEEL : SKIN; ctx.lineWidth = 3; line(ctx, 33, 19, 40, 15); // weapon arm
+
+  if (knight) {
+    ctx.fillStyle = STEEL; ctx.fillRect(26, 8, 9, 8); // great helm
+    ctx.strokeStyle = STEEL_DARK; ctx.lineWidth = 1; line(ctx, 26, 8, 26, 16);
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1; line(ctx, 27, 12, 34, 12); // visor slit
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(30, 6, 4, Math.PI, Math.PI * 2); ctx.fill(); // plume
+    ctx.strokeStyle = color; ctx.lineWidth = 1; line(ctx, 33, 5, 37, 3); line(ctx, 33, 6, 38, 5);
+  } else {
+    ctx.fillStyle = SKIN_SHADE; ctx.fillRect(27, 15, 4, 3); // neck
+    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(29, 11, 4.5, 0, Math.PI * 2); ctx.fill(); keyline(ctx);
+    ctx.fillStyle = '#2a2018'; ctx.fillRect(31, 10, 1, 1);
+    if (mang) {
+      ctx.fillStyle = LEATHER_DARK; ctx.beginPath(); ctx.arc(29, 10, 5, Math.PI, Math.PI * 2); ctx.fill(); keyline(ctx);
+      ctx.strokeStyle = 'rgba(230,222,205,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(29, 10, 5, Math.PI, Math.PI * 2); ctx.stroke(); // fur trim
+      ctx.strokeStyle = color; ctx.lineWidth = 1; line(ctx, 24, 10, 34, 10); // player band
+    } else {
+      ctx.strokeStyle = LEATHER; ctx.lineWidth = 2; line(ctx, 25, 9, 33, 9); // scout headband
+    }
+  }
+
+  // Hoof contact shadows.
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ellipse(ctx, 19, 50, 4, 1.5); ctx.fill();
+  ellipse(ctx, 39, 50, 4, 1.5); ctx.fill();
+}
+
+// Gaia sheep — never player-tinted. A gradient-fluff body with ears/legs/tail so it
+// reads as a cute animal, not a wool blob.
 function drawSheep(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = '#f2efe6';
-  ellipse(ctx, 27, 41, 14, 8);
-  ctx.fill();
-  // fluff bumps
+  // Legs first (behind the fleece).
+  ctx.fillStyle = '#6a5c4c';
+  for (const lx of [17, 21, 33, 37]) ctx.fillRect(lx, 45, 2, 5);
+  ctx.fillStyle = '#2e2a24';
+  for (const lx of [17, 21, 33, 37]) ctx.fillRect(lx, 48, 2, 2);
+
+  // Fleece — a soft radial gradient body under a cluster of bump arcs.
+  const g = ctx.createRadialGradient(27, 36, 2, 27, 39, 16);
+  g.addColorStop(0, '#fbf8f0'); g.addColorStop(1, '#ddd6c4');
+  ctx.fillStyle = g;
+  ellipse(ctx, 27, 38, 14, 9); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = '#f4efe4';
   ctx.beginPath();
-  ctx.arc(17, 40, 5, 0, Math.PI * 2);
-  ctx.arc(24, 36, 5.5, 0, Math.PI * 2);
-  ctx.arc(32, 37, 5, 0, Math.PI * 2);
-  ctx.arc(38, 41, 4.5, 0, Math.PI * 2);
+  ctx.arc(16, 39, 4.5, 0, Math.PI * 2);
+  ctx.arc(22, 34, 5.5, 0, Math.PI * 2);
+  ctx.arc(29, 33, 5.5, 0, Math.PI * 2);
+  ctx.arc(35, 35, 5, 0, Math.PI * 2);
+  ctx.arc(38, 40, 4.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#3b3029';
-  ctx.fillRect(18, 48, 2, 5);
-  ctx.fillRect(35, 48, 2, 5);
-  // head
-  ctx.fillStyle = '#34302e';
-  ctx.beginPath(); ctx.arc(42, 41, 4.5, 0, Math.PI * 2); ctx.fill();
+  // Low belly shading arcs.
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.beginPath(); ctx.arc(20, 44, 3, 0, Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.arc(27, 45, 3, 0, Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.arc(34, 44, 3, 0, Math.PI); ctx.fill();
+
+  // Head + drooping ear + muzzle highlight + eye.
+  ctx.fillStyle = '#3b332c';
+  ellipse(ctx, 42, 41, 4.5, 4); ctx.fill(); keyline(ctx);
+  ctx.fillStyle = '#2f2822'; tri(ctx, 45, 38, 49, 40, 45, 42);
+  ctx.fillStyle = '#8a7f72'; ctx.beginPath(); ctx.arc(44, 42, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f4f0e6'; ctx.fillRect(43, 40, 1, 1);
+  // Tail.
+  ctx.fillStyle = '#f0ebde'; ctx.beginPath(); ctx.arc(13, 39, 2.5, 0, Math.PI * 2); ctx.fill();
 }
 
+// Rounded torso built from a rect + top/bottom arcs (no beziers). Path only — the
+// caller fills it and re-strokes the same path for the keyline.
 function roundBody(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-  // rounded-ish torso built from a rect + top/bottom arcs (no quadraticCurveTo needed)
   ctx.beginPath();
   ctx.moveTo(x, y + 3);
   ctx.lineTo(x, y + h - 3);
@@ -358,7 +634,6 @@ function roundBody(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.lineTo(x + w, y + 3);
   ctx.arc(x + w / 2, y + 3, w / 2, 0, Math.PI, true);
   ctx.closePath();
-  ctx.fill();
 }
 
 // ---- Projectiles ------------------------------------------------------------
@@ -370,14 +645,21 @@ function rasterizeProjectile(subtype: number): Sprite {
   const ctx = get2d(canvas);
   ctx.clearRect(0, 0, PROJ, PROJ);
   if (subtype === ProjectileType.Axe) {
-    ctx.strokeStyle = '#7a5a30'; ctx.lineWidth = 2; line(ctx, 3, 13, 12, 4);
-    ctx.fillStyle = '#c7ccd1';
-    ctx.beginPath(); ctx.moveTo(12, 4); ctx.lineTo(15, 3); ctx.lineTo(13, 8); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; // spin motion arc
+    ctx.beginPath(); ctx.arc(8, 8, 6, -0.6, 0.9); ctx.stroke();
+    ctx.strokeStyle = WOOD; ctx.lineWidth = 2; line(ctx, 3, 13, 11, 5);
+    ctx.fillStyle = STEEL; // francisca bit as an arc-bounded wedge (~60% scale)
+    ctx.beginPath(); ctx.moveTo(11, 3); ctx.arc(13, 6, 3.4, -1.3, 0.9); ctx.lineTo(11, 8); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = STEEL_LIGHT; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(13, 6, 3.4, -1.3, 0.9); ctx.stroke();
   } else {
-    // arrow: a short line with a head
-    ctx.strokeStyle = '#3a2a16'; ctx.lineWidth = 2; line(ctx, 3, 13, 12, 4);
-    ctx.fillStyle = '#e8e2d0';
-    ctx.beginPath(); ctx.moveTo(12, 4); ctx.lineTo(9, 5); ctx.lineTo(11, 8); ctx.closePath(); ctx.fill();
+    // arrow: shaft + steel head with a glint + two fletching fins at the tail
+    ctx.strokeStyle = '#4a3620'; ctx.lineWidth = 1.5; line(ctx, 2, 14, 12, 4);
+    ctx.fillStyle = STEEL_LIGHT; tri(ctx, 12, 4, 15, 1, 13, 7);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(13, 3, 1, 1);
+    ctx.fillStyle = '#d8d2c0';
+    tri(ctx, 2, 14, 5, 12, 4, 15);
+    tri(ctx, 2, 14, 0, 12, 2, 16);
   }
   return { canvas, anchorX: PROJ / 2, anchorY: PROJ / 2 };
 }
@@ -820,7 +1102,8 @@ function rasterizeFx(subtype: number, owner: number, variant: number): Sprite {
   }
 }
 
-// 3 frames: tight puff -> wide wisps -> faint ring.
+// 3 frames: tight puff -> wide wisps -> faint ring. Each blob is a warm radial core
+// so the dust has volume; frame 1 flicks up pebbles, frame 2 leaves a thin ring.
 function rasterizeDustPuff(frame: number): Sprite {
   const S = 24;
   const canvas = createOffscreenCanvas(S, S);
@@ -828,33 +1111,54 @@ function rasterizeDustPuff(frame: number): Sprite {
   ctx.clearRect(0, 0, S, S);
   const cx = S / 2, cy = S / 2;
   const spread = 3 + frame * 3;
-  const alpha = frame === 0 ? 0.5 : frame === 1 ? 0.38 : 0.24;
-  ctx.fillStyle = `rgba(196,182,150,${alpha})`;
+  const alpha = frame === 0 ? 0.55 : frame === 1 ? 0.40 : 0.22;
   const puffs = [[0, 0, 4], [-spread, 1, 3], [spread, 0, 3], [0, -spread * 0.7, 2.5], [spread * 0.6, spread * 0.5, 2.5]];
   for (let k = 0; k < puffs.length; k++) {
-    ctx.beginPath();
-    ctx.arc(cx + puffs[k][0], cy + puffs[k][1], puffs[k][2] + frame * 0.5, 0, Math.PI * 2);
-    ctx.fill();
+    const px = cx + puffs[k][0], py = cy + puffs[k][1], r = puffs[k][2] + frame * 0.5;
+    const g = ctx.createRadialGradient(px, py, 0.5, px, py, r);
+    g.addColorStop(0, `rgba(203,188,152,${alpha})`);
+    g.addColorStop(1, 'rgba(203,188,152,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+  if (frame === 1) {
+    ctx.fillStyle = 'rgba(120,100,70,0.7)';
+    ctx.fillRect(cx + spread + 2, cy - 4, 1, 1);
+    ctx.fillRect(cx - spread - 2, cy - 2, 1, 1);
+  } else if (frame === 2) {
+    ctx.strokeStyle = 'rgba(203,188,152,0.15)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, spread + 3, 0, Math.PI * 2); ctx.stroke();
   }
   return { canvas, anchorX: cx, anchorY: cy };
 }
 
-// 2 frames: bright 4-point star (fresh) -> smaller redder star (fading).
+// 2 frames on an 18x18 canvas (anchor 9,9): a glowing 8-ray white star on impact,
+// then a smaller orange star with scattered embers. canvas2d reads the anchor, so the
+// resize is transparent to the caller.
 function rasterizeHitSpark(frame: number): Sprite {
-  const S = 14;
+  const S = 18;
   const canvas = createOffscreenCanvas(S, S);
   const ctx = get2d(canvas);
   ctx.clearRect(0, 0, S, S);
-  const cx = S / 2, cy = S / 2;
-  const r = frame === 0 ? 6 : 4;
-  ctx.strokeStyle = frame === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(255,150,90,0.9)';
-  ctx.lineWidth = 2;
-  line(ctx, cx - r, cy, cx + r, cy);
-  line(ctx, cx, cy - r, cx, cy + r);
-  const d = r * 0.6;
-  ctx.lineWidth = 1;
-  line(ctx, cx - d, cy - d, cx + d, cy + d);
-  line(ctx, cx + d, cy - d, cx - d, cy + d);
+  const cx = 9, cy = 9;
+  if (frame === 0) {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 7);
+    g.addColorStop(0, 'rgba(255,240,200,0.5)'); g.addColorStop(1, 'rgba(255,240,200,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    const r = 7;
+    ctx.lineWidth = 2; line(ctx, cx - r, cy, cx + r, cy); line(ctx, cx, cy - r, cx, cy + r);
+    const d = r * 0.62;
+    ctx.lineWidth = 1; line(ctx, cx - d, cy - d, cx + d, cy + d); line(ctx, cx + d, cy - d, cx - d, cy + d);
+  } else {
+    const r = 4.5;
+    ctx.strokeStyle = 'rgba(255,150,90,0.9)';
+    ctx.lineWidth = 1.5; line(ctx, cx - r, cy, cx + r, cy); line(ctx, cx, cy - r, cx, cy + r);
+    const d = r * 0.6;
+    ctx.lineWidth = 1; line(ctx, cx - d, cy - d, cx + d, cy + d); line(ctx, cx + d, cy - d, cx - d, cy + d);
+    ctx.fillStyle = 'rgba(255,180,90,0.85)';
+    ctx.fillRect(cx + 5, cy - 3, 1, 1); ctx.fillRect(cx - 4, cy + 4, 1, 1); ctx.fillRect(cx + 3, cy + 5, 1, 1);
+  }
   return { canvas, anchorX: cx, anchorY: cy };
 }
 

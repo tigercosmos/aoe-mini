@@ -6,7 +6,7 @@
 // When the match ends, stepping stops but rendering continues.
 
 import type { World } from '../shared/world';
-import type { AIPlayer, Renderer, InputController } from '../shared/interfaces';
+import type { AIPlayer, Renderer, InputController, ViewState } from '../shared/interfaces';
 import type { GameEvent } from '../shared/events';
 import type { Command } from '../shared/commands';
 import { MS_PER_TICK, MAX_TICKS_PER_FRAME, MIN_SIM_SPEED, MAX_SIM_SPEED } from '../shared/constants';
@@ -32,6 +32,16 @@ export interface GameLoopOptions {
   renderer: Renderer;
   minimapCtx: CanvasRenderingContext2D;
   hud: Hud;
+  /**
+   * Optional procedural-audio hook (src/audio). Purely additive: when omitted the loop is unchanged.
+   * onCommands sees ONLY the human commands for a tick (called before AI commands are appended);
+   * onTick fires once per sim tick right after stepWorld with that tick's events (per-tick latency,
+   * not the 6-frame HUD flush). The loop never mutates the arrays it passes in.
+   */
+  audio?: {
+    onTick(evs: readonly GameEvent[], world: World, view: ViewState, ticksThisFrame: number): void;
+    onCommands?(cmds: readonly Command[]): void;
+  };
   now?: () => number;
   raf?: (cb: (t: number) => void) => number;
 }
@@ -72,6 +82,8 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
       while (acc >= MS_PER_TICK && ticks < maxTicks) {
         // Human commands first (or local AI when auto-playing), then each opponent AI in ascending player order.
         const cmds: Command[] = input.drainCommands();
+        // Audio hears the human commands ONLY (before any AI commands are appended below).
+        opts.audio?.onCommands?.(cmds);
         if (autoPlay?.() && localAI) {
           const localCmds = localAI.think(world);
           for (let i = 0; i < localCmds.length; i++) cmds.push(localCmds[i]);
@@ -81,6 +93,8 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
           for (let i = 0; i < aiCmds.length; i++) cmds.push(aiCmds[i]);
         }
         const evs = stepWorld(world, cmds);
+        // Per-tick audio (ticks is the count of prior ticks this frame, so ticks+1 is this tick's index).
+        opts.audio?.onTick(evs, world, input.view, ticks + 1);
         for (let i = 0; i < evs.length; i++) pendingEvents.push(evs[i]);
         acc -= MS_PER_TICK;
         ticks++;

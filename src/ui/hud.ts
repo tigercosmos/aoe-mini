@@ -394,8 +394,10 @@ class GameHud implements Hud {
   private readonly view: ViewState;
 
   private readonly barEl: HTMLElement;
+  private readonly resCellEls: HTMLElement[] = [];
   private readonly resValEls: HTMLElement[] = [];
   private readonly resVillEls: HTMLElement[] = [];
+  private readonly agePipEls: HTMLElement[] = [];
   private readonly idleBtn: HTMLButtonElement;
   private readonly idleCountEl: HTMLElement;
   private readonly popEl: HTMLElement;
@@ -438,6 +440,8 @@ class GameHud implements Hud {
   private lastIdle: number[] = [];
   private idleCycleIdx = -1;
   private lastHousedToastTick = -1e9;
+  private lastBuiltToastTick = -1e9;
+  private ageBannerTimer: ReturnType<typeof setTimeout> | null = null;
   private prevHp: Float32Array | null = null;
   private prevAlive: Uint8Array | null = null;
   private recentAlerts: { x: number; y: number; tick: number }[] = [];
@@ -472,6 +476,7 @@ class GameHud implements Hud {
       const val = el('span', 'hud-res-val', '0');
       const vill = el('span', 'hud-res-vill', '');
       cell.append(icon, val, vill);
+      this.resCellEls.push(cell);
       this.resValEls.push(val);
       this.resVillEls.push(vill);
       this.barEl.append(cell);
@@ -497,6 +502,16 @@ class GameHud implements Hud {
 
     this.ageEl = el('span', 'hud-age', 'Dark Age');
     this.barEl.append(this.ageEl);
+
+    // Persistent AoE-style age insignia. A SIBLING of ageEl (whose textContent is rewritten each
+    // frame, which would otherwise wipe child pips). Filled up to the current age in renderTopBar.
+    const agePips = el('span', 'hud-age-pips');
+    for (let k = 0; k < 4; k++) {
+      const pip = el('span', 'hud-age-pip');
+      this.agePipEls.push(pip);
+      agePips.append(pip);
+    }
+    this.barEl.append(agePips);
 
     this.agingEl = el('span', 'hud-aging hud-hidden');
     this.agingLabel = el('span', 'hud-aging-label', '');
@@ -668,6 +683,8 @@ class GameHud implements Hud {
       const v = econ.perRes[i];
       const vt = v > 0 ? `·${v}` : '';
       if (this.resVillEls[i].textContent !== vt) this.resVillEls[i].textContent = vt;
+      // Low-resource warning on the CELL (never on the .hud-res-vill span, whose order is test-pinned).
+      this.resCellEls[i].classList.toggle('hud-res-low', Math.floor(r[i]) < 50);
     }
 
     const pop = `${player.population}/${player.populationCap}`;
@@ -683,6 +700,9 @@ class GameHud implements Hud {
 
     const age = `${AGE_LABEL[player.age]} Age`;
     if (this.ageEl.textContent !== age) this.ageEl.textContent = age;
+    for (let k = 0; k < this.agePipEls.length; k++) {
+      this.agePipEls[k].classList.toggle('hud-age-pip-on', k <= player.age);
+    }
 
     const clock = formatClock(world.tick);
     if (this.clockEl.textContent !== clock) this.clockEl.textContent = clock;
@@ -1048,6 +1068,7 @@ class GameHud implements Hud {
     row.append(b);
 
     if (opts.ageGated) {
+      b.classList.add('hud-btn-locked'); // CSS padlock badge in the corner
       b.disabled = true; // gated by age regardless of resources/mode
     } else {
       b.disabled = this.autoPlay;
@@ -1334,7 +1355,12 @@ class GameHud implements Hud {
     for (const e of events) {
       switch (e.type) {
         case 'ageAdvanced':
-          if (e.player === this.localPlayer) this.pushToast(`Advanced to the ${AGE_LABEL[e.age]} Age`, 'good');
+          if (e.player === this.localPlayer) {
+            this.pushToast(`Advanced to the ${AGE_LABEL[e.age]} Age`, 'good');
+            this.showAgeBanner(e.age);
+          } else {
+            this.pushToast(`Player ${e.player} has advanced to the ${AGE_LABEL[e.age]} Age`, 'info');
+          }
           break;
         case 'researchComplete':
           if (e.player === this.localPlayer) this.pushToast(`Researched ${TECH_LABEL[e.tech]}`, 'good');
@@ -1351,7 +1377,18 @@ class GameHud implements Hud {
           if (e.owner === this.localPlayer && e.killer !== this.localPlayer) this.raiseAlert(world, e.x, e.y, true);
           break;
         case 'constructionComplete':
-          if (e.owner === this.localPlayer) this.stats.built++;
+          if (e.owner === this.localPlayer) {
+            this.stats.built++;
+            // Toast for meaningful buildings only (skip House/Farm spam), rate-limited.
+            if (
+              e.building !== BuildingTypeEnum.House &&
+              e.building !== BuildingTypeEnum.Farm &&
+              world.tick - this.lastBuiltToastTick >= 200
+            ) {
+              this.lastBuiltToastTick = world.tick;
+              this.pushToast(`${BUILDING_LABEL[e.building]} complete`, 'good');
+            }
+          }
           break;
         case 'commandRejected':
           if (e.player === this.localPlayer && !this.autoPlay) this.pushToast(`Can't do that: ${e.reason}`, 'info');
@@ -1369,6 +1406,33 @@ class GameHud implements Hud {
           break;
       }
     }
+  }
+
+  // Centered parchment "age advanced" ceremony banner. Idempotent: removes any prior banner and its
+  // pending timer first so a rapid double age-up never accumulates nodes or leaks timers. Self-removes
+  // on animationend (real browser) with a setTimeout fallback (jsdom fires no animation events).
+  private showAgeBanner(age: Age): void {
+    const prev = this.root.querySelector('.hud-age-banner');
+    if (prev) prev.remove();
+    if (this.ageBannerTimer !== null) {
+      clearTimeout(this.ageBannerTimer);
+      this.ageBannerTimer = null;
+    }
+    const banner = el('div', 'hud-age-banner');
+    banner.append(
+      el('div', 'hud-age-banner-title', `${AGE_LABEL[age]} Age`),
+      el('div', 'hud-age-banner-sub', 'Your civilization has advanced'),
+    );
+    const remove = (): void => {
+      banner.remove();
+      if (this.ageBannerTimer !== null) {
+        clearTimeout(this.ageBannerTimer);
+        this.ageBannerTimer = null;
+      }
+    };
+    banner.addEventListener('animationend', remove);
+    this.ageBannerTimer = setTimeout(remove, 4200);
+    this.root.append(banner);
   }
 
   private pushToast(text: string, kind: ToastKind = 'info', x?: number, y?: number): void {
@@ -1407,13 +1471,13 @@ class GameHud implements Hud {
     let text: string;
     let cls: string;
     if (winner === this.localPlayer) {
-      text = 'Victory!';
+      text = 'You are Victorious!';
       cls = 'hud-victory';
     } else if (winner < 0) {
       text = 'Draw';
       cls = 'hud-draw';
     } else {
-      text = 'Defeat';
+      text = 'You have been defeated!';
       cls = 'hud-defeat';
     }
     this.overlayEl.classList.add(cls);

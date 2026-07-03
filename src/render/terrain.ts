@@ -25,6 +25,8 @@ export interface TerrainLayer {
   draw(ctx: CanvasRenderingContext2D, world: World, view: ViewState): void;
   /** Animated water shimmer stamped over the (already-drawn) base terrain. */
   drawWaterOverlay(ctx: CanvasRenderingContext2D, world: World, view: ViewState, nowMs: number): void;
+  /** Sparse ambient grass shimmer (wind), reusing warmed WaterShimmer keys; hard-capped. */
+  drawWindOverlay(ctx: CanvasRenderingContext2D, world: World, view: ViewState, nowMs: number): void;
   drawFog(ctx: CanvasRenderingContext2D, world: World, view: ViewState): void;
   markDirty(tile: number): void;
   markAllDirty(): void;
@@ -291,12 +293,63 @@ export function createTerrainLayer(mapSize: number): TerrainLayer {
     ctx.globalAlpha = 1;
   }
 
+  // Ambient "wind" over land: a very faint WaterShimmer stamped on a sparse deterministic
+  // scatter of VISIBLE grass tiles. Reuses the warmed WaterShimmer keys (no cache growth),
+  // gated at zoom >= 0.75, culled to on-screen chunks, and hard-capped at 120 draws/frame so
+  // it can never dominate frame time.
+  function drawWindOverlay(ctx: CanvasRenderingContext2D, world: World, view: ViewState, nowMs: number): void {
+    const zoom = view.zoom;
+    if (zoom < 0.75) return;
+    const map = world.map;
+    const lp = view.localPlayer;
+    const camIX = isoX(view.camX, view.camY);
+    const camIY = isoY(view.camX, view.camY);
+    const halfW = view.viewportW / 2;
+    const halfH = view.viewportH / 2;
+    const cw = CHUNK_W * zoom;
+    const ch = CHUNK_H * zoom;
+    const sw = TILE_W * zoom * 0.6;
+    const sh = TILE_H * zoom * 0.6;
+    const t = nowMs * 0.0015;
+    let drawn = 0;
+    ctx.globalAlpha = 0.10;
+    for (let cy = 0; cy < chunksY && drawn < 120; cy++) {
+      for (let cx = 0; cx < chunksX && drawn < 120; cx++) {
+        const x0 = cx * CHUNK;
+        const y0 = cy * CHUNK;
+        const originIsoX = (x0 - y0) * HW - CHUNK_W / 2;
+        const originIsoY = (x0 + y0) * HH;
+        const sx = (originIsoX - camIX) * zoom + halfW;
+        const sy = (originIsoY - camIY) * zoom + halfH;
+        if (sx + cw < 0 || sx > view.viewportW || sy + ch < 0 || sy > view.viewportH) continue;
+        const xEnd = Math.min(x0 + CHUNK, size);
+        const yEnd = Math.min(y0 + CHUNK, size);
+        for (let ty = y0; ty < yEnd && drawn < 120; ty++) {
+          for (let tx = x0; tx < xEnd && drawn < 120; tx++) {
+            if ((tx * 7 + ty * 13) % 31 !== 0) continue;
+            const ti = ty * size + tx;
+            if (map.terrain[ti] !== Terrain.Grass) continue;
+            if (((map.visible[ti] >> lp) & 1) === 0) continue;
+            const frame = (((t + tx * 0.7 + ty * 1.3) | 0) % 3 + 3) % 3;
+            const spr = getSprite(spriteKey(SPRITE_KIND_FX, FxSprite.WaterShimmer, 0, frame));
+            const lcx = isoX(tx, ty) - originIsoX;
+            const lcy = isoY(tx, ty) - originIsoY + HH;
+            ctx.drawImage(spr.canvas, sx + lcx * zoom - sw / 2, sy + lcy * zoom - sh / 2, sw, sh);
+            drawn++;
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   return {
     draw(ctx, world, view) {
       refresh(world, view);
       composite(ctx, baseCanvas, baseDirty, redrawBase, world, view);
     },
     drawWaterOverlay,
+    drawWindOverlay,
     drawFog(ctx, world, view) {
       refresh(world, view);
       composite(ctx, fogCanvas, fogDirty, redrawFog, world, view);
@@ -400,18 +453,25 @@ function drawTileDetail(ctx: CanvasRenderingContext2D, terrain: number, lx: numb
   const gy = cyc + (((h >> 6) % 5) - 2);
   if (terrain === Terrain.Grass) {
     if (h % 23 === 0) {
-      ctx.fillStyle = '#e9e07a';
+      // Two flower hues so meadows aren't a monoculture of yellow.
+      ctx.fillStyle = ((h >> 2) & 1) ? '#e9e07a' : '#d9885e';
       ctx.beginPath(); ctx.arc(gx, gy, 1.5, 0, Math.PI * 2); ctx.fill();
     } else {
       ctx.strokeStyle = '#3f6b30'; ctx.lineWidth = 1;
       line(ctx, gx - 2, gy + 1, gx - 2, gy - 2);
       line(ctx, gx, gy + 1, gx, gy - 3);
       line(ctx, gx + 2, gy + 1, gx + 2, gy - 2);
+      line(ctx, gx + 4, gy + 1, gx + 4, gy - 2); // 4th blade — fuller tuft
+      // A single lighter tip dot on the tallest blade catches the top-right light.
+      ctx.fillStyle = '#5f8f44';
+      ctx.beginPath(); ctx.arc(gx, gy - 3, 0.8, 0, Math.PI * 2); ctx.fill();
     }
   } else {
     ctx.fillStyle = '#6f6656';
     ctx.beginPath(); ctx.arc(gx - 1, gy, 1.3, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(gx + 2, gy + 1, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8b8271'; // 1px lit facet on a pebble
+    ctx.fillRect(gx - 1, gy - 1, 1, 1);
   }
 }
 

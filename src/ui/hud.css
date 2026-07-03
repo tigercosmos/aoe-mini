@@ -30,11 +30,15 @@
   align-items: center;
   gap: 4px;
   padding: 4px;
+  /* Wood-grain + double gold border, echoing the #minimap-wrap bezel. */
   background:
-    linear-gradient(180deg, rgba(91, 77, 55, 0.98), rgba(32, 29, 24, 0.98) 18%, rgba(11, 11, 10, 0.96) 78%, rgba(62, 52, 36, 0.96)),
-    #12100c;
-  border: 2px solid #6f5a35;
-  box-shadow: 0 0 0 1px #17100a, 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 238, 179, 0.22);
+    linear-gradient(180deg, rgba(60, 51, 36, 0.34), rgba(9, 8, 6, 0.62) 60%, rgba(46, 39, 27, 0.5)),
+    repeating-linear-gradient(92deg, #4e4434 0 3px, #463c2d 3px 6px);
+  border: 2px solid #100b08;
+  box-shadow:
+    inset 0 0 0 1px #8a7548,
+    0 8px 22px rgba(0, 0, 0, 0.45),
+    inset 0 2px 0 rgba(255, 238, 179, 0.18);
 }
 
 .hud-res {
@@ -255,11 +259,16 @@
   grid-template-columns: 268px minmax(360px, 1fr);
   gap: 12px;
   padding: 13px 14px 12px 14px;
+  /* Wood-grain + double gold top border, matching the top bar / minimap bezel. */
   background:
-    linear-gradient(90deg, rgba(62, 60, 55, 0.8), transparent 12%, transparent 88%, rgba(25, 23, 20, 0.65)),
-    linear-gradient(180deg, #5f5d54 0, #302c27 12px, #171512 13px, #1f1d19 100%);
-  border-top: 3px solid #7d704d;
-  box-shadow: 0 -1px 0 #16100b, 0 -12px 34px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 238, 181, 0.2);
+    linear-gradient(90deg, rgba(62, 60, 55, 0.72), transparent 12%, transparent 88%, rgba(25, 23, 20, 0.6)),
+    linear-gradient(180deg, rgba(48, 41, 29, 0.5), rgba(9, 8, 6, 0.72) 22%, rgba(15, 13, 11, 0.9)),
+    repeating-linear-gradient(92deg, #4e4434 0 3px, #463c2d 3px 6px);
+  border-top: 3px solid #100b08;
+  box-shadow:
+    inset 0 3px 0 #8a7548,
+    inset 0 4px 0 rgba(255, 238, 181, 0.14),
+    0 -12px 34px rgba(0, 0, 0, 0.42);
 }
 
 .hud-bottom::before,
@@ -380,11 +389,15 @@
   align-items: center;
   justify-content: center;
   color: #fff7e6;
+  /* Parchment backing behind the procedural figure + a gilded double frame. */
   background:
-    radial-gradient(circle at 45% 35%, rgba(217, 190, 120, 0.72), transparent 42%),
-    linear-gradient(180deg, rgba(73, 51, 27, 0.95), rgba(28, 19, 12, 0.98));
+    radial-gradient(circle at 45% 32%, rgba(240, 226, 186, 0.9), transparent 55%),
+    linear-gradient(180deg, #d8c9a3, #b89f6f);
   border: 2px solid #4e3820;
-  box-shadow: inset 0 1px 0 rgba(255, 237, 180, 0.2), 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    inset 0 0 0 1px #8a7548,
+    inset 0 1px 0 rgba(255, 244, 205, 0.55),
+    0 4px 14px rgba(0, 0, 0, 0.28);
   font-weight: 900;
 }
 
@@ -422,8 +435,10 @@
 
 .hud-btn-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 6px;
+  /* Fixed 5-column grid so commands keep stable slot positions (AoE muscle memory). */
+  grid-template-columns: repeat(5, minmax(58px, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 4px;
 }
 
 .hud-btn {
@@ -464,13 +479,17 @@
 .hud-btn-hotkey {
   position: absolute;
   top: 2px;
-  right: 2px;
+  left: 2px;
   padding: 0 3px;
-  font-size: 9px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  font-size: 10px;
   font-weight: 900;
+  letter-spacing: 0.04em;
   color: #ffe7a8;
   background: #1c140c;
-  border: 1px solid #6a4a25;
+  border: 1px solid #b08a3e;
+  box-shadow: 0 0 0 1px rgba(16, 11, 8, 0.9);
 }
 
 .hud-btn-cost {
@@ -498,12 +517,14 @@
 
 .hud-btn-unaffordable:disabled {
   opacity: 0.82;
-  filter: none;
+  filter: grayscale(0.85) brightness(0.65);
   cursor: default;
 }
 
 .hud-btn:hover:not(:disabled) {
   border-color: #d6b15d;
+  outline: 1px solid #c9a94f;
+  outline-offset: -3px;
   filter: brightness(1.12);
 }
 
@@ -590,12 +611,16 @@
 }
 
 .hud-toast {
+  position: relative;
   padding: 7px 16px;
   color: #fff8ea;
-  background: linear-gradient(180deg, rgba(45, 38, 27, 0.96), rgba(14, 12, 10, 0.96));
+  background: linear-gradient(180deg, rgba(48, 40, 28, 0.97), rgba(16, 13, 10, 0.97));
   border: 2px solid #6f5a35;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(138, 117, 72, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3);
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  font-weight: 700;
 }
 
 .hud-overlay {
@@ -742,9 +767,35 @@
 
 /* ---- Toast kinds ---- */
 
-.hud-toast-good { border-left: 4px solid #e0b040; }
-.hud-toast-alert { border-left: 4px solid #a83a30; }
+.hud-toast-good { border-left: 4px solid #57ae4e; }
+.hud-toast-info { border-left: 4px solid #cbb890; }
+.hud-toast-alert { border-left: 4px solid #c9473c; padding-left: 30px; }
 .hud-toast-click { pointer-events: auto; cursor: pointer; }
+
+/* Alert horn glyph built from two rotated bordered triangles (pure CSS). */
+.hud-toast-alert::before,
+.hud-toast-alert::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  width: 0;
+  height: 0;
+}
+.hud-toast-alert::before {
+  top: 50%;
+  margin-top: -6px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 9px solid #e79a4a;
+}
+.hud-toast-alert::after {
+  top: 50%;
+  left: 10px;
+  margin-top: -3px;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 5px solid #f2c778;
+}
 
 .hud-toast-in { animation: hud-toast-in 0.18s ease-out; }
 .hud-toast-alert.hud-toast-in { animation: hud-toast-in 0.18s ease-out, hud-toast-shake 0.4s ease-out; }
@@ -774,9 +825,20 @@
   width: 12px;
   height: 12px;
   margin: -6px 0 0 -6px;
-  border: 2px solid #ff5040;
+  border: 2px solid #e0564a;
   border-radius: 50%;
-  animation: hud-ping 1.6s ease-out 2;
+  animation: hud-ping 1.8s ease-out 2;
+}
+
+/* Second ring, delayed, for a double expanding pulse. */
+.hud-ping::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid #e0564a;
+  border-radius: 50%;
+  animation: hud-ping 1.8s ease-out 2;
+  animation-delay: 300ms;
 }
 
 @keyframes hud-ping {
@@ -908,7 +970,7 @@
   }
 
   .hud-btn-row {
-    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .hud-res-vill,
@@ -946,6 +1008,228 @@
   }
 
   .hud-btn-row {
-    grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
   }
+}
+
+/* ==========================================================================
+   AoE II flavour skin — headers, age insignia, ceremony banner, indicators,
+   command-card polish, victory/defeat, injected audio button.
+   ========================================================================== */
+
+/* ---- System-serif small-caps headers/names ---- */
+
+.hud-panel-title {
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: #d8c493;
+}
+
+.hud-sel-name {
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+/* ---- Resource values: faint shadow + tabular numerals ---- */
+
+.hud-res-val {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- Age insignia pips (sibling of the textContent-managed .hud-age) ---- */
+
+.hud-age-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+}
+
+.hud-age-pip {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid #8a7548;
+  background: #3a332a;
+}
+
+.hud-age-pip-on {
+  background: #e0b040;
+  box-shadow: 0 0 4px rgba(224, 176, 64, 0.7);
+}
+
+/* ---- Age-up ceremony banner ---- */
+
+.hud-age-banner {
+  position: fixed;
+  top: 22%;
+  left: 50%;
+  z-index: 7;
+  padding: 18px 56px;
+  text-align: center;
+  pointer-events: none;
+  background: linear-gradient(180deg, #efe3c2, #d8c493);
+  border: 2px solid #8a7548;
+  box-shadow:
+    0 0 0 1px #100b08,
+    0 18px 46px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 250, 228, 0.7);
+  animation: hud-age-banner 3.5s ease-out forwards;
+}
+
+.hud-age-banner-title {
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+  font-size: 34px;
+  font-weight: 900;
+  color: #4a3517;
+  text-shadow: 0 1px 0 rgba(255, 247, 220, 0.65);
+}
+
+.hud-age-banner-sub {
+  margin-top: 4px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: #6a4f28;
+}
+
+/* Laurel flourishes: two mirrored quarter-circle border arcs (pure CSS). */
+.hud-age-banner::before,
+.hud-age-banner::after {
+  content: "";
+  position: absolute;
+  bottom: 10px;
+  width: 24px;
+  height: 40px;
+  border: 3px solid #8a7548;
+  opacity: 0.8;
+}
+
+.hud-age-banner::before {
+  left: 14px;
+  border-top: none;
+  border-right: none;
+  border-radius: 0 0 0 24px;
+}
+
+.hud-age-banner::after {
+  right: 14px;
+  border-top: none;
+  border-left: none;
+  border-radius: 0 0 24px 0;
+}
+
+@keyframes hud-age-banner {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.92); }
+  9% { opacity: 1; transform: translateX(-50%) scale(1); }
+  82% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1); }
+}
+
+/* ---- Low-resource indicator (cell-level; never touches .hud-res-vill) ---- */
+
+.hud-res-low {
+  border-color: #b9862e;
+  animation: hud-res-low 1.2s ease-in-out infinite;
+}
+
+.hud-res-low .hud-res-val {
+  color: #ffb45e;
+}
+
+@keyframes hud-res-low {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 237, 180, 0.12); }
+  50% { box-shadow: inset 0 1px 0 rgba(255, 237, 180, 0.12), 0 0 8px rgba(255, 180, 94, 0.5); }
+}
+
+/* ---- Age-gated command button: corner padlock (pure CSS) ---- */
+
+.hud-btn-locked::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 6px;
+  background: #d8c493;
+  border: 1px solid #100b08;
+  border-radius: 1px;
+}
+
+.hud-btn-locked::before {
+  content: "";
+  position: absolute;
+  right: 6px;
+  bottom: 9px;
+  width: 3px;
+  height: 5px;
+  border: 1px solid #d8c493;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  z-index: 1;
+}
+
+/* ---- Victory / defeat overlay polish ---- */
+
+.hud-overlay {
+  background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.84) 78%);
+}
+
+.hud-over-panel .hud-overlay-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 0, 0, 0.7), 0 6px 30px rgba(0, 0, 0, 0.85);
+}
+
+.hud-overlay.hud-victory .hud-overlay-text { color: #e8c96a; }
+.hud-overlay.hud-defeat .hud-overlay-text { color: #e66f62; }
+.hud-overlay.hud-draw .hud-overlay-text { color: #e8dfcc; }
+
+.hud-over-sub {
+  font-family: Georgia, "Times New Roman", serif;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+.hud-over-stats td {
+  border-bottom: 1px solid rgba(200, 168, 92, 0.35);
+}
+
+.hud-over-again {
+  border-color: #c9a94f;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 237, 180, 0.3),
+    0 0 12px rgba(201, 169, 79, 0.4),
+    0 2px 0 #100b08;
+}
+
+/* ---- Audio package's injected button (class only; element may not exist) ---- */
+
+.hud-audio-btn {
+  min-height: 25px;
+  padding: 2px 12px;
+  border: 1px solid #4b3c24;
+  background: linear-gradient(180deg, rgba(20, 18, 15, 0.92), rgba(4, 4, 4, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 237, 180, 0.12);
+  color: #f5e7c8;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hud-audio-btn:hover {
+  filter: brightness(1.08);
 }

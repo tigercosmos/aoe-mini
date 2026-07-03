@@ -9,6 +9,7 @@ import { createAIPlayer } from '../ai/ai';
 import { createCanvas2DRenderer } from '../render/canvas2d';
 import { createInputController } from '../ui/input';
 import { createHud } from '../ui/hud';
+import { createGameAudio } from '../audio';
 import { createGameLoop } from './loop';
 
 export interface GameHandle {
@@ -60,6 +61,32 @@ export function startGame(
     },
   );
 
+  // Procedural Web Audio SFX (src/audio). Constructor never throws; a no-AudioContext environment
+  // (jsdom / headless) yields a fully inert audio object. Sees the LIVE autoPlay flag so acks stay off
+  // while the AI drives. The button lives in the HUD top bar (injected, hud.ts untouched).
+  const audio = createGameAudio(hudRoot, () => autoPlay);
+
+  // Autoplay policy: create/resume the AudioContext only from the first real user gesture.
+  const unlock = (): void => {
+    audio.resume();
+    window.removeEventListener('pointerdown', unlock);
+    window.removeEventListener('keydown', unlock);
+  };
+  window.addEventListener('pointerdown', unlock, { passive: true });
+  window.addEventListener('keydown', unlock);
+
+  // 'M' toggles mute. KNOWN, ACCEPTED overlap: in manual mode 'm' also selects all military
+  // (src/ui/input.ts, off-limits). The injected HUD button is the primary discoverable control.
+  const onMuteKey = (e: KeyboardEvent): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.defaultPrevented) return;
+    if (e.key.toLowerCase() !== 'm') return;
+    const t = e.target as HTMLElement | null;
+    const tag = t?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t != null && t.isContentEditable)) return;
+    audio.toggleMuted();
+  };
+  window.addEventListener('keydown', onMuteKey);
+
   const renderer = createCanvas2DRenderer();
   renderer.init(canvas);
   input.attach(canvas, minimap);
@@ -89,6 +116,7 @@ export function startGame(
     renderer,
     minimapCtx,
     hud,
+    audio,
   });
   loop.start();
 
@@ -96,8 +124,12 @@ export function startGame(
     stop(): void {
       loop.stop();
       window.removeEventListener('resize', resize);
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('keydown', onMuteKey);
       input.detach();
       renderer.dispose();
+      audio.dispose();
     },
   };
 }
