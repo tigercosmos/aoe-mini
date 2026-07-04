@@ -6,7 +6,7 @@
 
 import './setup-panel.css';
 import { CivId } from '../shared/enums';
-import type { MatchSetup, PlayerSetup } from '../shared/interfaces';
+import type { PlayerSetup } from '../shared/interfaces';
 import { PLAYER_COLORS } from '../render/sprites';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';

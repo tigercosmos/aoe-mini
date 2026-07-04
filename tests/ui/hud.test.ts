@@ -166,7 +166,7 @@ describe('hud top bar', () => {
     const sink = makeSink();
     const hud: Hud = createHud(root, 1, sink.fn, f.view);
     hud.setAutoPlay(false);
-    hud.update(f.world, f.view, []);
+    hud.update(f.world, []);
 
     expect(root.querySelector('.hud-clock')?.textContent).toBe('1:30');
     expect(root.querySelector('.hud-idle-count')?.textContent).toBe('2');
@@ -187,7 +187,7 @@ describe('hud command grid', () => {
     const hud: Hud = createHud(root, 1, sink.fn, f.view);
     hud.setAutoPlay(false); // switching to manual clears the selection...
     f.view.selection = [f.handleFor(b)]; // ...so select the barracks afterwards
-    hud.update(f.world, f.view, []);
+    hud.update(f.world, []);
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q' }));
 
@@ -208,7 +208,7 @@ describe('hud command grid', () => {
     const hud: Hud = createHud(root, 1, sink.fn, f.view);
     hud.setAutoPlay(false);
     f.view.selection = [f.handleFor(b)];
-    hud.update(f.world, f.view, []);
+    hud.update(f.world, []);
 
     expect(root.querySelector('.hud-cost-no')).not.toBeNull();
   });

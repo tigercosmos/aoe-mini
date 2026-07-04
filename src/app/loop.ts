@@ -110,7 +110,7 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
 
     if (frameCount % UI_REFRESH_EVERY === 0) {
       renderer.renderMinimap(world, input.view, minimapCtx);
-      hud.update(world, input.view, pendingEvents);
+      hud.update(world, pendingEvents);
       pendingEvents.length = 0;
     }
     frameCount++;

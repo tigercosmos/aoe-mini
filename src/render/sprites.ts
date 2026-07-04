@@ -190,9 +190,6 @@ const UNIT_H = 66;
 const UNIT_AX = 28; // horizontal centre
 const UNIT_AY = 50; // ground-contact y
 
-function isInfantry(t: number): boolean {
-  return t === UnitType.Militia || t === UnitType.ManAtArms || t === UnitType.Spearman || t === UnitType.ThrowingAxeman;
-}
 function isArcher(t: number): boolean { return t === UnitType.Archer || t === UnitType.Longbowman; }
 function isCavalry(t: number): boolean {
   return t === UnitType.ScoutCavalry || t === UnitType.Knight || t === UnitType.Mangudai;
@@ -770,7 +767,7 @@ function rasterizeBuilding(subtype: number, owner: number, variant: number): Spr
   ctx.fillStyle = wallLight;
   quad(ctx, gBot, gRight, rRight, rBot); ctx.fill();
 
-  drawWallTexture(ctx, subtype, wall, gLeft, gBot, gRight, rLeft, rBot, rRight, wallH);
+  drawWallTexture(ctx, subtype, wall, gLeft, gBot, gRight, wallH);
 
   drawPitchedRoof(ctx, roofColor, subtype, rTop, rRight, rBot, rLeft, wallH);
 
@@ -1010,7 +1007,6 @@ function drawWallTexture(
   subtype: number,
   wall: string,
   gLeft: readonly number[], gBot: readonly number[], gRight: readonly number[],
-  rLeft: readonly number[], rBot: readonly number[], rRight: readonly number[],
   wallH: number,
 ): void {
   if (wallH < 8) return;

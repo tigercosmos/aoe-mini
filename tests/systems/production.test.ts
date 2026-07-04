@@ -38,7 +38,7 @@ import { createSpatialGrid } from '../../src/core/spatial';
 import { createTileMap } from '../../src/map/tilemap';
 import { createPathCache } from '../../src/map/pathcache';
 import { resolveBuildingStats } from '../../src/content/stats';
-import type { World, ProductionItem } from '../../src/shared/world';
+import type { ProductionItem } from '../../src/shared/world';
 import {
   EntityKind,
   OrderType,
@@ -51,7 +51,6 @@ import {
   MatchStatus,
   RESOURCE_COUNT,
   TECH_COUNT,
-  FLAG_UNDER_CONSTRUCTION,
 } from '../../src/shared/enums';
 
 function makePlayer(id: number, civ: number, alive: boolean) {

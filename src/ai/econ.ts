@@ -165,7 +165,7 @@ function queuedVillagers(world: World, scan: PlayerScan): number {
  * LumberCamp -> MiningCamp -> anticipatory Farm.
  */
 function planResourceBuilding(ctx: AIContext): Command | null {
-  const { world, player, scan, ref } = ctx;
+  const { world, scan, ref } = ctx;
   const woodDropoffs = scan.completeByType[BuildingType.TownCenter].concat(scan.completeByType[BuildingType.LumberCamp]);
   const miningDropoffs = scan.completeByType[BuildingType.TownCenter].concat(scan.completeByType[BuildingType.MiningCamp]);
 

@@ -30,7 +30,7 @@ vi.mock('../../src/sim/actions', () => ({
   recomputePopCap: (): void => {},
 }));
 
-import { combatSystem, spawnProjectile } from '../../src/systems/combat';
+import { combatSystem } from '../../src/systems/combat';
 import { projectileSystem } from '../../src/systems/projectile';
 import { createEntityManager } from '../../src/core/entities';
 import { createComponentStores } from '../../src/core/components';
@@ -38,7 +38,6 @@ import { createSpatialGrid } from '../../src/core/spatial';
 import { createTileMap } from '../../src/map/tilemap';
 import { createPathCache } from '../../src/map/pathcache';
 import { resolveUnitStats, resolveBuildingStats } from '../../src/content/stats';
-import type { World } from '../../src/shared/world';
 import { resolveHandle } from '../../src/shared/world';
 import {
   EntityKind,

@@ -15,7 +15,7 @@ import {
   EntityKind,
   GAIA,
 } from '../shared/enums';
-import type { PlayerId, CivId } from '../shared/enums';
+import type { CivId } from '../shared/enums';
 import type { World, PlayerState } from '../shared/world';
 import { resolveHandle } from '../shared/world';
 import type { Command } from '../shared/commands';
@@ -44,7 +44,6 @@ import {
   findNearestEnemyEntity,
   techReqsMet,
   uniqueUnitOf,
-  pickByDeficit,
   type AIContext,
 } from './ai';
 

@@ -223,8 +223,6 @@ describe('audio dispatcher — throttle + acks', () => {
   });
 
   it('emits a command ack in manual mode but stays silent under autoplay', () => {
-    const world = makeWorld();
-    const view = makeView(1);
     const manual = makeEngine();
     const dm = createDispatcher(manual.port, { isAutoPlay: () => false });
     dm.onCommands([{ type: 'move', player: 1, units: [0], x: 3, y: 3 } as Command]);

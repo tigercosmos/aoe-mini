@@ -43,7 +43,7 @@ import { MIN_SIM_SPEED, MAX_SIM_SPEED, TICK_RATE, POP_CAP_MAX } from '../shared/
 import { getSprite, spriteKey, PLAYER_COLORS } from '../render/sprites';
 
 export interface Hud {
-  update(world: World, view: ViewState, events: GameEvent[]): void;
+  update(world: World, events: GameEvent[]): void;
   root: HTMLElement;
   setAutoPlay(auto: boolean): void;
   setSimSpeed(speed: number): void;
@@ -437,7 +437,6 @@ class GameHud implements Hud {
 
   // Cross-frame state.
   private lastWorld: World | null = null;
-  private lastIdle: number[] = [];
   private idleCycleIdx = -1;
   private lastHousedToastTick = -1e9;
   private lastBuiltToastTick = -1e9;
@@ -614,7 +613,7 @@ class GameHud implements Hud {
 
   // ---- main update ----
 
-  update(world: World, view: ViewState, events: GameEvent[]): void {
+  update(world: World, events: GameEvent[]): void {
     const player = world.players[this.localPlayer];
     if (!player) return;
     this.lastWorld = world;
@@ -708,7 +707,6 @@ class GameHud implements Hud {
     if (this.clockEl.textContent !== clock) this.clockEl.textContent = clock;
 
     // Idle badge/button.
-    this.lastIdle = econ.idle;
     const n = econ.idle.length;
     const it = String(n);
     if (this.idleCountEl.textContent !== it) this.idleCountEl.textContent = it;
@@ -759,7 +757,6 @@ class GameHud implements Hud {
   // ---- selection panel ----
 
   private rebuildSelection(world: World): void {
-    const comp = world.comp;
     const em = world.em;
     this.selectionEl.replaceChildren();
     this.selRefs = [];

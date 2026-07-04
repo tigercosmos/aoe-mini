@@ -26,7 +26,6 @@ import {
   GATHER_RANGE,
   DEPOSIT_RANGE_PAD,
   RETARGET_NODE_RADIUS,
-  tileIndex,
   tileXOf,
   tileYOf,
 } from '../shared/constants';

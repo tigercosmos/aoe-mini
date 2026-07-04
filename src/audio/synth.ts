@@ -38,11 +38,6 @@ function applyFilter(ctx: AudioContextLike, layer: Layer, t0: number, dur: numbe
   return node;
 }
 
-function layerDuration(layer: Layer): number {
-  const delay = layer.delay ?? 0;
-  return delay + Math.max(0.002, layer.attack + layer.decay);
-}
-
 function buildOsc(
   ctx: AudioContextLike, layer: OscLayer, t0: number, voiceGain: GainLike,
   detuneJitter: number, sources: ScheduledSourceLike[],
